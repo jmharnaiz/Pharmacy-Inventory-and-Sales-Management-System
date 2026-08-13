@@ -1,303 +1,431 @@
 # Pharmacy Inventory and Sales Management System
-## Backlog
 
-### Project Description
-A web-based Pharmacy Inventory and Sales Management System that allows pharmacy staff to manage medicines, suppliers, customers, and sales transactions. The system tracks medicine inventory, expiration dates, suppliers, customer information, and daily sales.
+## Feature Backlog
+
+**Project:** Pharmacy Inventory and Sales Management System
+**Version:** Deliverable 1
+**Total User Stories:** 25
 
 ---
 
-# Record Type: Medicines
+# Medicine Management
 
-## MED-001 - Create Medicine
+## US-001 - Add Medicine
+
 **User Story**
-As a pharmacist, I want to add a new medicine so that it becomes available for inventory and sales.
+
+As a pharmacy staff member, I want to add a new medicine so that the pharmacy inventory remains updated.
 
 **Acceptance Criteria**
-- Medicine name is required.
-- Quantity must be greater than or equal to zero.
-- Expiration date must be valid.
-- Medicine appears in the inventory list after saving.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Medicine information can be entered.
+* Required fields are completed.
+* Medicine record is saved successfully.
+* Medicine ID is unique.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## MED-002 - View Medicines List
+## US-002 - View Medicine List
+
 **User Story**
-As a pharmacist, I want to view all medicines so that I can monitor inventory.
+
+As a pharmacy staff member, I want to view all medicines so that I can manage the pharmacy inventory.
 
 **Acceptance Criteria**
-- Displays all medicines.
-- Shows stock quantity.
-- Shows expiration date.
-- Search function filters medicines.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Medicine list loads successfully.
+* Medicine information is displayed.
+* Search function works.
+* Stock quantity is displayed.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## MED-003 - View Medicine Details
+## US-003 - View Medicine Details
+
 **User Story**
-As a pharmacist, I want to view medicine details so that I can check complete information.
+
+As a pharmacy staff member, I want to view medicine details so that I can see complete information about a medicine.
 
 **Acceptance Criteria**
-- Displays medicine name.
-- Displays supplier.
-- Displays category.
-- Displays quantity.
-- Displays expiration date.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Medicine details display correctly.
+* Price and stock information are shown.
+* Expiration date is displayed.
+* Supplier information is displayed.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## MED-004 - Update Medicine
+## US-004 - Edit Medicine
+
 **User Story**
-As a pharmacist, I want to edit medicine information so that inventory stays accurate.
+
+As a pharmacy staff member, I want to edit medicine information so that inventory records remain accurate.
 
 **Acceptance Criteria**
-- Existing medicine can be edited.
-- Invalid values are rejected.
-- Updated information is displayed.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Existing medicine information is displayed.
+* Editable fields can be changed.
+* Changes are saved successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## MED-005 - Delete Medicine
+## US-005 - Delete Medicine
+
 **User Story**
-As a pharmacist, I want to remove obsolete medicines so that inventory stays organized.
+
+As a pharmacy staff member, I want to delete a medicine record so that inactive or incorrect records can be removed.
 
 **Acceptance Criteria**
-- Confirmation dialog appears.
-- Medicine is deleted after confirmation.
-- Inventory list updates automatically.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Confirmation dialog appears.
+* User can cancel the deletion.
+* Medicine is deleted after confirmation.
+
+**Owner:** Pharmacy Team
 
 ---
 
-# Record Type: Suppliers
+# Supplier Management
 
-## SUP-001 - Create Supplier
+## US-006 - Add Supplier
+
 **User Story**
-As a pharmacist, I want to add a supplier so that medicines can be assigned to suppliers.
+
+As a pharmacy staff member, I want to add a supplier so that supplier information can be maintained.
 
 **Acceptance Criteria**
-- Supplier name is required.
-- Contact information is saved.
-- Supplier appears in the supplier list.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Supplier information can be entered.
+* Required fields are completed.
+* Supplier record is saved successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SUP-002 - View Supplier List
+## US-007 - View Supplier List
+
 **User Story**
-As a pharmacist, I want to view all suppliers so that I can manage supplier information.
+
+As a pharmacy staff member, I want to view all suppliers so that I can manage supplier records.
 
 **Acceptance Criteria**
-- Displays supplier names.
-- Displays contact information.
-- Search function works.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Supplier list is displayed.
+* Supplier information is shown.
+* Search function is available.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SUP-003 - View Supplier Details
+## US-008 - View Supplier Details
+
 **User Story**
-As a pharmacist, I want to view supplier details so that I can check supplier information.
+
+As a pharmacy staff member, I want to view supplier details so that I can verify supplier information.
 
 **Acceptance Criteria**
-- Shows supplier name.
-- Shows address.
-- Shows phone number.
-- Shows medicines supplied.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Supplier details are displayed.
+* Contact information is shown.
+* Supplier information loads successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SUP-004 - Update Supplier
+## US-009 - Edit Supplier
+
 **User Story**
-As a pharmacist, I want to edit supplier information so that records stay updated.
+
+As a pharmacy staff member, I want to edit supplier information so that supplier records remain accurate.
 
 **Acceptance Criteria**
-- Existing supplier can be edited.
-- Updated information is displayed.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Existing supplier information is displayed.
+* Changes can be made.
+* Updated information is saved successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SUP-005 - Delete Supplier
+## US-010 - Delete Supplier
+
 **User Story**
-As a pharmacist, I want to delete inactive suppliers so that supplier records stay organized.
+
+As a pharmacy staff member, I want to delete a supplier record so that inactive suppliers can be removed.
 
 **Acceptance Criteria**
-- Confirmation dialog appears.
-- Supplier is removed after confirmation.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Confirmation message appears.
+* User can cancel deletion.
+* Supplier is deleted after confirmation.
+
+**Owner:** Pharmacy Team
 
 ---
 
-# Record Type: Customers
+# Customer Management
 
-## CUS-001 - Create Customer
+## US-011 - Add Customer
+
 **User Story**
-As a pharmacist, I want to register a customer so that sales can be recorded properly.
+
+As a pharmacy staff member, I want to add a customer so that customer information can be maintained.
 
 **Acceptance Criteria**
-- Customer name is required.
-- Customer is saved successfully.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Customer information can be entered.
+* Required fields are completed.
+* Customer record is saved successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## CUS-002 - View Customer List
+## US-012 - View Customer List
+
 **User Story**
-As a pharmacist, I want to view all customers so that I can manage customer records.
+
+As a pharmacy staff member, I want to view all customers so that I can manage customer records.
 
 **Acceptance Criteria**
-- Displays all customers.
-- Search feature works.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Customer list is displayed.
+* Customer information is shown.
+* Search function is available.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## CUS-003 - View Customer Details
+## US-013 - View Customer Details
+
 **User Story**
-As a pharmacist, I want to view customer information so that I can review purchase history.
+
+As a pharmacy staff member, I want to view customer details so that I can verify customer information.
 
 **Acceptance Criteria**
-- Shows customer details.
-- Shows previous purchases.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Customer details are displayed.
+* Contact information is shown.
+* Customer profile loads successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## CUS-004 - Update Customer
+## US-014 - Edit Customer
+
 **User Story**
-As a pharmacist, I want to edit customer information so that records remain accurate.
+
+As a pharmacy staff member, I want to edit customer information so that customer records remain accurate.
 
 **Acceptance Criteria**
-- Existing customer can be edited.
-- Changes are saved successfully.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Existing customer information is displayed.
+* Changes can be made.
+* Updated information is saved successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## CUS-005 - Delete Customer
+## US-015 - Delete Customer
+
 **User Story**
-As a pharmacist, I want to delete customer records when no longer needed.
+
+As a pharmacy staff member, I want to delete a customer record so that inactive customer records can be removed.
 
 **Acceptance Criteria**
-- Confirmation dialog appears.
-- Customer is removed.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Confirmation dialog appears.
+* User can cancel deletion.
+* Customer record is deleted after confirmation.
+
+**Owner:** Pharmacy Team
 
 ---
 
-# Record Type: Sales
+# Sales Management
 
-## SAL-001 - Create Sale
+## US-016 - Record Sale
+
 **User Story**
-As a cashier, I want to record a sale so that medicine purchases are tracked.
+
+As a pharmacy staff member, I want to record a sale so that pharmacy transactions are properly tracked.
 
 **Acceptance Criteria**
-- Medicine exists.
-- Quantity does not exceed stock.
-- Total amount is calculated automatically.
-- Stock is updated after sale.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Customer can be selected.
+* Medicines can be selected.
+* Quantity can be entered.
+* Total amount is calculated.
+* Sale is saved successfully.
+* Medicine stock is updated.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SAL-002 - View Sales List
+## US-017 - View Sales List
+
 **User Story**
-As a cashier, I want to view all sales so that I can review completed transactions.
+
+As a pharmacy staff member, I want to view sales records so that I can monitor pharmacy transactions.
 
 **Acceptance Criteria**
-- Displays sales history.
-- Displays customer name.
-- Displays total amount.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Sales list is displayed.
+* Sale date is shown.
+* Customer information is displayed.
+* Total amount is displayed.
+* Search or filtering is available.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SAL-003 - View Sale Details
+## US-018 - View Sale Details
+
 **User Story**
-As a cashier, I want to view transaction details so that I can verify completed sales.
+
+As a pharmacy staff member, I want to view sale details so that I can verify a completed transaction.
 
 **Acceptance Criteria**
-- Displays purchased medicines.
-- Displays payment details.
-- Displays transaction total.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Sale information is displayed.
+* Purchased medicines are shown.
+* Quantities are displayed.
+* Total amount is shown.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SAL-004 - Update Sale
+## US-019 - Edit Sale
+
 **User Story**
-As a cashier, I want to edit a sale before completion so that mistakes can be corrected.
+
+As a pharmacy staff member, I want to edit a sales record so that incorrect transaction information can be corrected.
 
 **Acceptance Criteria**
-- Sale can be edited before completion.
-- Totals update automatically.
-- Stock updates correctly.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Existing sale information is displayed.
+* Sale information can be updated.
+* Changes are saved successfully.
+
+**Owner:** Pharmacy Team
 
 ---
 
-## SAL-005 - Delete Sale
+## US-020 - Delete Sale
+
 **User Story**
-As a cashier, I want to cancel an incorrect sale so that records remain accurate.
+
+As a pharmacy staff member, I want to delete a sales record so that incorrect transactions can be removed.
 
 **Acceptance Criteria**
-- Confirmation dialog appears.
-- Sale is removed.
-- Inventory is restored.
 
-**Owner:** Jay-Ann Mariquit, Christine Ilonen, JM Harnaiz
+* Confirmation dialog appears.
+* User can cancel deletion.
+* Sale record is deleted after confirmation.
 
----
-
-# Summary
-
-| Record Type | Stories |
-|-------------|---------|
-| Medicines | 5 |
-| Suppliers | 5 |
-| Customers | 5 |
-| Sales | 5 |
-
-**Total User Stories:** 20
+**Owner:** Pharmacy Team
 
 ---
 
-## Screen Coverage
+# Reports
 
-- Login
-- Dashboard
-- Medicines
-- Medicine Details
-- Add Medicine
-- Edit Medicine
-- Suppliers
-- Customers
-- Sales
-- Sale Details
-- Delete Confirmation
-- Empty State
-- Error State
+## US-021 - Generate Sales Report
+
+**User Story**
+
+As a pharmacy staff member, I want to generate sales reports so that I can review pharmacy sales performance.
+
+**Acceptance Criteria**
+
+* Sales report is generated correctly.
+* Report includes selected dates.
+* Sales totals are displayed.
+* Report can be reviewed by the user.
+
+**Owner:** Pharmacy Team
+
+---
+
+## US-022 - Generate Inventory Report
+
+**User Story**
+
+As a pharmacy staff member, I want to generate an inventory report so that I can monitor medicine stock levels.
+
+**Acceptance Criteria**
+
+* Inventory report is generated correctly.
+* Medicine quantities are displayed.
+* Low-stock medicines can be identified.
+* Expiration information is displayed.
+
+**Owner:** Pharmacy Team
+
+---
+
+# Authentication
+
+## US-023 - Login
+
+**User Story**
+
+As a pharmacy staff member, I want to log in securely so that I can access the pharmacy management system.
+
+**Acceptance Criteria**
+
+* Valid credentials allow login.
+* Invalid credentials show an error.
+* Unauthorized users cannot access protected pages.
+
+**Owner:** Pharmacy Team
+
+---
+
+## US-024 - Logout
+
+**User Story**
+
+As a pharmacy staff member, I want to log out so that my account remains secure.
+
+**Acceptance Criteria**
+
+* User session ends.
+* User is redirected to the login page.
+* Protected pages cannot be accessed after logout.
+
+**Owner:** Pharmacy Team
+
+---
+
+## US-025 - Change Password
+
+**User Story**
+
+As a pharmacy staff member, I want to change my password so that my account remains secure.
+
+**Acceptance Criteria**
+
+* Old password is verified.
+* New password can be entered.
+* New password meets the required security rules.
+* Password is updated successfully.
+
+**Owner:** Pharmacy Team
