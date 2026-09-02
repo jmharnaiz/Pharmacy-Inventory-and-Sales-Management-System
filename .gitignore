@@ -1,33 +1,12 @@
-# Build folders
-bin/
-obj/
-
-# Visual Studio
-.vs/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
-
-# Logs
-*.log
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Environment files
+__pycache__/
+*.pyc
+*.pyo
+*.db
+pharmacy.db
+attendance.db
+instance/
+.venv/
+venv/
 .env
-.env.*
-
-# Packages
-packages/
-
-# Rider
-.idea/
-
-# VS Code
-.vscode/
-
-# NuGet
-*.nupkg
+.pytest_cache/
+.DS_Store
