@@ -1,0 +1,42 @@
+{# Expects: pager = {page, pages, total, page_base} #}
+{% macro page_link(base, p, label, icon=None, disabled=false, active=false) %}
+    {% if disabled %}
+        <button class="btn-page" disabled>{% if icon %}<i class="ph {{ icon }}"></i>{% else %}{{ label }}{% endif %}</button>
+    {% elif active %}
+        <span class="btn-page active">{{ label }}</span>
+    {% else %}
+        <a class="btn-page" href="{{ base }}page={{ p }}">{% if icon %}<i class="ph {{ icon }}"></i>{% else %}{{ label }}{% endif %}</a>
+    {% endif %}
+{% endmacro %}
+
+{% if pager and pager.pages > 1 %}
+<div class="pagination-footer">
+    <span class="text-sm text-gray">
+        Showing {{ (pager.page - 1) * pager.per_page + 1 }} to
+        {{ [(pager.page * pager.per_page), pager.total] | min }} of {{ pager.total }} entries
+    </span>
+    <div class="pagination-controls">
+        {{ page_link(pager.page_base, pager.page - 1, icon='ph-caret-left', disabled=(pager.page <= 1)) }}
+
+        {% set start = [pager.page - 2, 1] | max %}
+        {% set end = [pager.page + 2, pager.pages] | min %}
+        {% if start > 1 %}
+            {{ page_link(pager.page_base, 1, label='1') }}
+            {% if start > 2 %}<span class="text-muted text-sm">…</span>{% endif %}
+        {% endif %}
+        {% for p in range(start, end + 1) %}
+            {{ page_link(pager.page_base, p, label=p, active=(p == pager.page)) }}
+        {% endfor %}
+        {% if end < pager.pages %}
+            {% if end < pager.pages - 1 %}<span class="text-muted text-sm">…</span>{% endif %}
+            {{ page_link(pager.page_base, pager.pages, label=pager.pages) }}
+        {% endif %}
+
+        {{ page_link(pager.page_base, pager.page + 1, icon='ph-caret-right', disabled=(pager.page >= pager.pages)) }}
+    </div>
+</div>
+{% elif pager %}
+<div class="pagination-footer">
+    <span class="text-sm text-gray">Showing 1 to {{ pager.total }} of {{ pager.total }} entries</span>
+</div>
+{% endif %}

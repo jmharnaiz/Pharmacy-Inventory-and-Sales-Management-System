@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block page_title %}Dashboard{% endblock %}
+{% block breadcrumbs %}Welcome back, {{ session.get('user', 'User')|title }}!{% endblock %}
+
+{% block content %}
+<!-- Key numbers -->
+<div class="dashboard-top-stats">
+    <div class="stat-card" style="--accent: #0b8243;">
+        <div class="stat-icon-wrapper" style="background-color: #e6f4ea; color: #0b8243;">
+            <i class="ph ph-pill" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Total Medicines</span>
+            <span class="stat-value" style="color: #0b8243;">{{ total_medicines }}</span>
+            <span class="stat-sub">Active medicines</span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #0284c7;">
+        <div class="stat-icon-wrapper" style="background-color: #e0f2fe; color: #0284c7;">
+            <i class="ph ph-package" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Stock Value</span>
+            <span class="stat-value" style="color: #0284c7;">{{ currency }}{{ "%.2f"|format(total_stock_value) }}</span>
+            <span class="stat-sub">At cost price</span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #9333ea;">
+        <div class="stat-icon-wrapper" style="background-color: #f3e8ff; color: #9333ea;">
+            <i class="ph ph-cash" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Total Sales</span>
+            <span class="stat-value" style="color: #9333ea;">{{ currency }}{{ "%.2f"|format(total_sales) }}</span>
+            <span class="stat-sub">All time revenue</span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #0b8243;">
+        <div class="stat-icon-wrapper" style="background-color: #e6f4ea; color: #0b8243;">
+            <i class="ph ph-calendar-check" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Sales Today</span>
+            <span class="stat-value" style="color: #0b8243;">{{ currency }}{{ "%.2f"|format(sales_today) }}</span>
+            <span class="stat-sub">{{ sales_today_count }} transaction{{ 's' if sales_today_count != 1 }} so far</span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #d97706;">
+        <div class="stat-icon-wrapper" style="background-color: #fef3c7; color: #d97706;">
+            <i class="ph ph-warning" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Needs Restocking</span>
+            <span class="stat-value" style="color: #d97706;">{{ low_stock_count + out_of_stock_count }}</span>
+            <span class="stat-sub">{{ out_of_stock_count }} out of stock</span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #0284c7;">
+        <div class="stat-icon-wrapper" style="background-color: #e0f2fe; color: #0284c7;">
+            <i class="ph ph-users" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Total Customers</span>
+            <span class="stat-value" style="color: #0284c7;">{{ total_customers }}</span>
+            <span class="stat-sub">Registered accounts</span>
+        </div>
+    </div>
+</div>
+
+<!-- Sales trend + stock alerts -->
+<div class="dash-grid">
+    <div class="panel">
+        <div class="section-head">
+            <h4><i class="ph ph-chart-bar" style="color: var(--brand);"></i> Sales — last 7 days</h4>
+            <a href="/ui/reports" class="link-more">View reports →</a>
+        </div>
+        <div class="chart-box">
+            <canvas id="salesChart"></canvas>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="section-head">
+            <h4><i class="ph ph-warning" style="color: var(--amber);"></i> Stock alerts</h4>
+            <a href="/ui/medicines?sort=stock" class="link-more">View all →</a>
+        </div>
+        {% if low_stock %}
+        <div class="alert-list">
+            {% for med in low_stock %}
+            <a class="alert-row" href="/ui/medicines/{{ med.id }}/edit" style="text-decoration: none; color: inherit;">
+                <span class="alert-ico" style="{% if med.current_stock == 0 %}background: #fee2e2; color: #dc2626;{% else %}background: #fef3c7; color: #d97706;{% endif %}">
+                    <i class="ph {% if med.current_stock == 0 %}ph-x-octagon{% else %}ph-warning{% endif %}"></i>
+                </span>
+                <span class="alert-body">
+                    <span class="alert-title">{{ med.medicine_name }}</span>
+                    <span class="alert-sub">{{ med.category or 'Uncategorized' }} · reorder at {{ low_stock_threshold }}</span>
+                </span>
+                <span class="alert-qty" style="{% if med.current_stock == 0 %}color: #dc2626;{% else %}color: #d97706;{% endif %}">
+                    {{ med.current_stock }} {{ med.unit or 'units' }}
+                </span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state" style="padding: 32px 0;">
+            <div class="empty-icon-wrapper" style="width: 64px; height: 64px;">
+                <i class="ph ph-check-circle" style="font-size: 30px; color: var(--brand);"></i>
+            </div>
+            <h4 style="font-size: 15px;">All stock levels are healthy</h4>
+            <p class="text-sm">Nothing is at or below the reorder point of {{ low_stock_threshold }}.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Recent sales + category mix -->
+<div class="dash-grid">
+    <div class="panel">
+        <div class="section-head">
+            <h4><i class="ph ph-receipt" style="color: var(--brand);"></i> Recent sales</h4>
+            <a href="/ui/sales" class="link-more">View all →</a>
+        </div>
+        {% if recent_sales %}
+        <table class="data-table">
+            <thead>
+                <tr><th>Invoice</th><th>Date</th><th>Customer</th><th>Payment</th><th class="text-right">Total</th></tr>
+            </thead>
+            <tbody>
+                {% for sale in recent_sales %}
+                <tr>
+                    <td><strong>{{ sale.invoice_no }}</strong></td>
+                    <td class="text-sm text-gray">{{ sale.date_time }}</td>
+                    <td>{{ sale.customer_name or 'Walk-in' }}</td>
+                    <td><span class="badge badge-neutral badge-plain">{{ sale.payment_method }}</span></td>
+                    <td class="text-right"><strong>{{ currency }}{{ "%.2f"|format(sale.total_amount) }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state" style="padding: 32px 0;">
+            <div class="empty-icon-wrapper" style="width: 64px; height: 64px;">
+                <i class="ph ph-receipt" style="font-size: 30px; color: var(--muted-light);"></i>
+            </div>
+            <h4 style="font-size: 15px;">No sales yet</h4>
+            <p class="text-sm">Newest invoices will appear here.</p>
+            <a href="/ui/sales/new" class="btn btn-primary btn-sm"><i class="ph ph-plus"></i> New Sale</a>
+        </div>
+        {% endif %}
+    </div>
+
+    <div>
+        <div class="panel">
+            <div class="section-head">
+                <h4><i class="ph ph-chart-pie-slice" style="color: var(--brand);"></i> Stock by category</h4>
+            </div>
+            {% if category_labels %}
+            <div class="chart-box-sm">
+                <canvas id="categoryChart"></canvas>
+            </div>
+            {% else %}
+            <p class="text-sm text-gray text-center" style="padding: 24px 0;">No medicines yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="panel">
+            <div class="section-head">
+                <h4><i class="ph ph-lightning" style="color: var(--brand);"></i> Quick actions</h4>
+            </div>
+            <div class="quick-actions">
+                <a class="quick-action" href="/ui/sales/new"><i class="ph ph-shopping-cart"></i> New Sale</a>
+                <a class="quick-action" href="/ui/medicines/new"><i class="ph ph-pill"></i> Add Medicine</a>
+                <a class="quick-action" href="/ui/purchases"><i class="ph ph-truck"></i> Receive Stock</a>
+                <a class="quick-action" href="/ui/customers/new"><i class="ph ph-user-plus"></i> Add Customer</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    if (!window.Chart) return;
+    var CURRENCY = window.PHARMACY ? window.PHARMACY.currency : '₱';
+
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = '#6b7280';
+
+    new Chart(document.getElementById('salesChart'), {
+        type: 'bar',
+        data: {
+            labels: {{ chart_labels | tojson }},
+            datasets: [{
+                label: 'Sales (' + CURRENCY + ')',
+                data: {{ chart_values | tojson }},
+                backgroundColor: 'rgba(11, 130, 67, 0.75)',
+                hoverBackgroundColor: 'rgba(11, 130, 67, 0.95)',
+                borderRadius: 6,
+                maxBarThickness: 42
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#111827',
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function (ctx) {
+                            return CURRENCY + Number(ctx.parsed.y).toLocaleString(undefined, {minimumFractionDigits: 2});
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, border: { display: false } },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: '#f3f4f6' },
+                    border: { display: false },
+                    ticks: {
+                        callback: function (value) { return CURRENCY + value; }
+                    }
+                }
+            }
+        }
+    });
+
+    var catCanvas = document.getElementById('categoryChart');
+    if (catCanvas) {
+        new Chart(catCanvas, {
+            type: 'doughnut',
+            data: {
+                labels: {{ category_labels | tojson }},
+                datasets: [{
+                    data: {{ category_units | tojson }},
+                    backgroundColor: ['#0b8243', '#0284c7', '#d97706', '#9333ea', '#64748b', '#dc2626'],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '62%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, padding: 12, font: { size: 12 } }
+                    },
+                    tooltip: {
+                        backgroundColor: '#111827',
+                        padding: 10,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function (ctx) {
+                                return ' ' + ctx.label + ': ' + ctx.parsed + ' units';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

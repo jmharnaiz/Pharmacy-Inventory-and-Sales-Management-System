@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block page_title %}Suppliers{% endblock %}
+{% block breadcrumbs %}Directory > Suppliers{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h3>Suppliers</h3>
+        <p>Manage the suppliers you purchase stock from.</p>
+    </div>
+    <a href="/ui/suppliers/new" class="btn btn-primary"><i class="ph ph-plus"></i> Add New Supplier</a>
+</div>
+
+<div class="card table-card">
+    <form class="table-toolbar" method="get" action="/ui/suppliers">
+        <div class="search-box">
+            <i class="ph ph-magnifying-glass"></i>
+            <input type="text" name="q" value="{{ q }}" placeholder="Search supplier, contact person, phone...">
+        </div>
+        <div class="table-filters">
+            <select class="form-select" name="status" onchange="this.form.submit()">
+                <option value="">All Statuses</option>
+                <option value="Active" {% if status == 'Active' %}selected{% endif %}>Active</option>
+                <option value="Inactive" {% if status == 'Inactive' %}selected{% endif %}>Inactive</option>
+            </select>
+            <select class="form-select" name="sort" onchange="this.form.submit()">
+                <option value="">Sort: Name A–Z</option>
+                <option value="name_desc" {% if sort == 'name_desc' %}selected{% endif %}>Name Z–A</option>
+                <option value="newest" {% if sort == 'newest' %}selected{% endif %}>Newest first</option>
+            </select>
+            {% if q or status or sort %}
+            <a href="/ui/suppliers" class="btn btn-outline"><i class="ph ph-x"></i> Clear</a>
+            {% endif %}
+            <button class="btn btn-outline" type="submit"><i class="ph ph-funnel"></i> Apply</button>
+        </div>
+    </form>
+
+    {% if suppliers|length == 0 %}
+    <div class="empty-state">
+        <div class="empty-icon-wrapper">
+            <i class="ph ph-buildings" style="font-size: 48px; color: var(--muted-light);"></i>
+        </div>
+        {% if q or status %}
+        <h4>No suppliers match your search</h4>
+        <p>Try a different keyword, or clear the filters to see everyone.</p>
+        <a href="/ui/suppliers" class="btn btn-outline"><i class="ph ph-x"></i> Clear filters</a>
+        {% else %}
+        <h4>No suppliers found</h4>
+        <p>You haven't added any suppliers yet.</p>
+        <a href="/ui/suppliers/new" class="btn btn-outline"><i class="ph ph-plus"></i> Add New Supplier</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <table class="data-table">
+        <thead>
+            <tr><th>#</th><th>Name</th><th>Contact</th><th>Phone</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            {% for supplier in suppliers %}
+            <tr>
+                <td>{{ (pager.page - 1) * pager.per_page + loop.index }}</td>
+                <td><strong>{{ supplier.supplier_name }}</strong></td>
+                <td>{{ supplier.contact_person or '-' }}</td>
+                <td>{{ supplier.phone or '-' }}</td>
+                <td>
+                    {% if supplier.status == 'Active' %}
+                        <span class="badge badge-success">Active</span>
+                    {% else %}
+                        <span class="badge badge-neutral">Inactive</span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    <a href="/ui/suppliers/{{ supplier.id }}/edit" class="btn-icon" title="Edit"><i class="ph ph-pencil-simple"></i></a>
+                    <button class="btn-icon text-danger" title="Delete" onclick="deleteSupplier({{ supplier.id }}, this)"><i class="ph ph-trash"></i></button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% include '_pagination.html' %}
+    {% endif %}
+</div>
+
+<script>
+async function deleteSupplier(id, btnElement) {
+    if (!confirm('Delete this supplier? This cannot be undone.')) return;
+
+    const icon = btnElement.querySelector('i');
+    const originalClass = icon.className;
+    icon.className = 'ph ph-spinner ph-spin';
+    btnElement.disabled = true;
+
+    try {
+        const response = await fetch(`/api/suppliers/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            const row = btnElement.closest('tr');
+            row.classList.add('row-leaving');
+            setTimeout(() => row.remove(), 300);
+            window.PHARMACY_TOAST && window.PHARMACY_TOAST('Supplier deleted.', 'success', 'Deleted');
+        } else {
+            const result = await response.json().catch(() => ({}));
+            window.PHARMACY_TOAST && window.PHARMACY_TOAST(result.error || 'Delete failed.', 'error', 'Delete failed');
+            btnElement.disabled = false;
+            icon.className = originalClass;
+        }
+    } catch (err) {
+        window.PHARMACY_TOAST && window.PHARMACY_TOAST('Network error.', 'error', 'Delete failed');
+        btnElement.disabled = false;
+        icon.className = originalClass;
+    }
+}
+</script>
+{% endblock %}

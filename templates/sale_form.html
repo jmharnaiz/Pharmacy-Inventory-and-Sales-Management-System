@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block page_title %}Sale Form{% endblock %}
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <h3>{% if sale %}Edit Sale{% else %}Add Sale{% endif %}</h3>
+        <button type="submit" form="saleForm" class="btn btn-primary">Save</button>
+    </div>
+    <form id="saleForm" data-mode="{% if sale %}edit{% else %}create{% endif %}" data-id="{{ sale.id if sale else '' }}">
+        <div class="form-group">
+            <label>Customer</label>
+            <select name="customer_id">
+                <option value="">Walk-in</option>
+                {% for c in customers %}
+                <option value="{{ c.id }}" {% if sale and sale.customer_id == c.id %}selected{% endif %}>{{ c.customer_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Payment Method *</label>
+            <select name="payment_method" required>
+                <option value="Cash" {% if sale and sale.payment_method == 'Cash' %}selected{% endif %}>Cash</option>
+                <option value="Card" {% if sale and sale.payment_method == 'Card' %}selected{% endif %}>Card</option>
+            </select>
+            <span class="text-xs text-danger field-error" id="error-payment_method"></span>
+        </div>
+        <div class="form-group">
+            <label>Line Items *</label>
+            <div id="lineItems"></div>
+            <button type="button" class="btn btn-outline" id="addLine" style="margin-top: 8px;">+ Add Item</button>
+            <div><span class="text-xs text-danger field-error" id="error-items"></span></div>
+        </div>
+        <div class="form-group">
+            <label>Total Amount</label>
+            <input type="text" id="totalDisplay" value="{{ currency }}0.00" readonly style="background: #f3f4f6;">
+            <span class="text-xs text-gray">Computed automatically from the line items above.</span>
+        </div>
+    </form>
+</div>
+<script>
+const medicines = {{ medicines|tojson }};
+const existingItems = {{ sale_items|tojson }};
+const form = document.getElementById('saleForm');
+const lineItemsEl = document.getElementById('lineItems');
+const totalDisplay = document.getElementById('totalDisplay');
+const CURRENCY = window.PHARMACY ? window.PHARMACY.currency : '₱';
+
+// Options are built with DOM APIs and textContent so a medicine name can
+// never be interpreted as markup.
+function medicineOption(medicine) {
+    const option = document.createElement('option');
+    option.value = medicine.id;
+    option.textContent = medicine.medicine_name + ' (stock: ' + medicine.current_stock + ')';
+    option.dataset.price = medicine.selling_price;
+    return option;
+}
+
+function priceFor(row) {
+    const select = row.querySelector('.li-med');
+    if (!select.value) return 0;
+    const currentPrice = parseFloat(select.selectedOptions[0].dataset.price) || 0;
+    // A line that still holds its original medicine keeps the price it was
+    // sold at; any line the user changed is priced at the current price.
+    if (row.dataset.originalMed && String(row.dataset.originalMed) === select.value) {
+        return parseFloat(row.dataset.originalPrice);
+    }
+    return currentPrice;
+}
+
+function recompute() {
+    let total = 0;
+    lineItemsEl.querySelectorAll('.line-row').forEach(function (row) {
+        const quantity = parseInt(row.querySelector('.li-qty').value, 10) || 0;
+        const subtotal = quantity * priceFor(row);
+        row.querySelector('.li-sub').textContent = CURRENCY + subtotal.toFixed(2);
+        total += subtotal;
+    });
+    totalDisplay.value = CURRENCY + total.toFixed(2);
+}
+
+function addLine(item) {
+    const row = document.createElement('div');
+    row.className = 'line-row';
+    row.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:8px;';
+
+    const select = document.createElement('select');
+    select.className = 'li-med';
+    select.required = true;
+    select.style.cssText = 'flex:2; padding:8px;';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = 'Select medicine...';
+    select.appendChild(placeholder);
+    medicines.forEach(function (medicine) {
+        select.appendChild(medicineOption(medicine));
+    });
+
+    const quantity = document.createElement('input');
+    quantity.type = 'number';
+    quantity.className = 'li-qty';
+    quantity.min = '1';
+    quantity.step = '1';
+    quantity.required = true;
+    quantity.value = '1';
+    quantity.style.cssText = 'width: 90px; padding:8px;';
+
+    const subtotal = document.createElement('span');
+    subtotal.className = 'li-sub text-gray';
+    subtotal.style.cssText = 'width: 110px; text-align:right;';
+    subtotal.textContent = CURRENCY + '0.00';
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-outline li-remove';
+    remove.textContent = '✕';
+    remove.title = 'Remove line';
+
+    row.appendChild(select);
+    row.appendChild(quantity);
+    row.appendChild(subtotal);
+    row.appendChild(remove);
+
+    if (item) {
+        select.value = String(item.medicine_id);
+        quantity.value = String(item.quantity);
+        row.dataset.originalMed = String(item.medicine_id);
+        row.dataset.originalPrice = String(item.unit_price);
+    }
+
+    select.addEventListener('change', recompute);
+    quantity.addEventListener('input', recompute);
+    remove.addEventListener('click', function () {
+        row.remove();
+        recompute();
+    });
+
+    lineItemsEl.appendChild(row);
+    recompute();
+}
+
+document.getElementById('addLine').addEventListener('click', function () {
+    addLine(null);
+});
+
+function clearErrors() {
+    form.querySelectorAll('.field-error').forEach(function (el) {
+        el.textContent = '';
+    });
+}
+
+form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    clearErrors();
+
+    const items = [];
+    lineItemsEl.querySelectorAll('.line-row').forEach(function (row) {
+        const select = row.querySelector('.li-med');
+        const quantity = parseInt(row.querySelector('.li-qty').value, 10);
+        if (!select.value || !quantity || quantity < 1) return;
+        const item = { medicine_id: parseInt(select.value, 10), quantity: quantity };
+        if (row.dataset.originalMed && String(row.dataset.originalMed) === select.value) {
+            item.unit_price = parseFloat(row.dataset.originalPrice);
+        }
+        items.push(item);
+    });
+
+    if (items.length === 0) {
+        document.getElementById('error-items').textContent = 'Add at least one line item.';
+        return;
+    }
+
+    const formData = new FormData(form);
+    const payload = {
+        customer_id: formData.get('customer_id'),
+        payment_method: formData.get('payment_method'),
+        items: items
+    };
+
+    const mode = form.getAttribute('data-mode');
+    const recordId = form.getAttribute('data-id');
+    try {
+        const response = await fetch(mode === 'edit' ? `/api/sales/${recordId}` : '/api/sales/', {
+            method: mode === 'edit' ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.PHARMACY.csrf },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (response.ok) {
+            const message = mode === 'edit'
+                ? 'Sale updated and stock levels adjusted.'
+                : 'Sale recorded and stock levels updated.';
+            window.location.href = '/ui/sales?saved=' + encodeURIComponent(message);
+            return;
+        }
+        const target = document.getElementById('error-' + result.field);
+        if (target) target.textContent = result.error;
+        else window.PHARMACY_TOAST && window.PHARMACY_TOAST(result.error || 'Could not save the sale.', 'error', 'Save failed');
+    } catch (err) {
+        window.PHARMACY_TOAST && window.PHARMACY_TOAST('Network error — please try again.', 'error', 'Save failed');
+    }
+});
+
+if (existingItems && existingItems.length) {
+    existingItems.forEach(function (item) {
+        addLine(item);
+    });
+} else {
+    addLine(null);
+}
+recompute();
+</script>
+{% endblock %}

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block page_title %}Sales{% endblock %}
+{% block breadcrumbs %}Transactions > Sales{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h3>Sales</h3>
+        <p>Record new sales and manage existing invoices.</p>
+    </div>
+    <a href="/ui/sales/new" class="btn btn-primary"><i class="ph ph-plus"></i> New Sale</a>
+</div>
+
+<div class="card table-card">
+    <form class="table-toolbar" method="get" action="/ui/sales">
+        <div class="search-box">
+            <i class="ph ph-magnifying-glass"></i>
+            <input type="text" name="q" value="{{ q }}" placeholder="Search invoice no, customer or cashier...">
+        </div>
+        <div class="table-filters">
+            <select class="form-select" name="sort" onchange="this.form.submit()">
+                <option value="">Newest first</option>
+                <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>Oldest first</option>
+                <option value="total_desc" {% if sort == 'total_desc' %}selected{% endif %}>Total: High first</option>
+                <option value="total_asc" {% if sort == 'total_asc' %}selected{% endif %}>Total: Low first</option>
+                <option value="invoice" {% if sort == 'invoice' %}selected{% endif %}>Invoice A–Z</option>
+            </select>
+            {% if q or sort %}
+            <a href="/ui/sales" class="btn btn-outline"><i class="ph ph-x"></i> Clear</a>
+            {% endif %}
+            <button class="btn btn-outline" type="submit"><i class="ph ph-funnel"></i> Apply</button>
+        </div>
+    </form>
+
+    {% if sales|length == 0 %}
+    <div class="empty-state">
+        <div class="empty-icon-wrapper">
+            <i class="ph ph-receipt" style="font-size: 48px; color: var(--muted-light);"></i>
+        </div>
+        {% if q %}
+        <h4>No sales match your search</h4>
+        <p>Try a different invoice number, customer or cashier name.</p>
+        <a href="/ui/sales" class="btn btn-outline"><i class="ph ph-x"></i> Clear search</a>
+        {% else %}
+        <h4>No sales recorded yet</h4>
+        <p>Record your first sale and the stock levels will update automatically.</p>
+        <a href="/ui/sales/new" class="btn btn-outline"><i class="ph ph-plus"></i> New Sale</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Invoice No</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Items</th>
+                <th>Total Amount</th>
+                <th>Payment</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sale in sales %}
+            <tr>
+                <td><strong>{{ sale.invoice_no }}</strong></td>
+                <td>{{ sale.date_time }}</td>
+                <td>{{ sale.customer_name or 'Walk-in' }}</td>
+                <td>
+                    {% if sale.item_count %}
+                        {{ sale.item_count }} line{{ 's' if sale.item_count != 1 }}
+                        {% if sale.legacy %}<span class="badge badge-neutral badge-plain" title="Line items reconstructed from the invoice total">backfilled</span>{% endif %}
+                    {% else %}
+                        <span class="text-muted text-sm">legacy</span>
+                    {% endif %}
+                </td>
+                <td><strong>{{ currency }}{{ "%.2f"|format(sale.total_amount) }}</strong></td>
+                <td>{{ sale.payment_method }}</td>
+                <td>
+                    {% if sale.status == 'Completed' %}
+                        <span class="badge badge-success">{{ sale.status }}</span>
+                    {% elif sale.status == 'Pending' %}
+                        <span class="badge badge-warning">{{ sale.status }}</span>
+                    {% else %}
+                        <span class="badge badge-neutral">{{ sale.status }}</span>
+                    {% endif %}
+                </td>
+                <td class="actions">
+                    <a href="/ui/sales/{{ sale.id }}/edit" class="btn-icon" title="Edit"><i class="ph ph-pencil-simple"></i></a>
+                    <button class="btn-icon text-danger" title="Delete" onclick="deleteSale({{ sale.id }}, this)"><i class="ph ph-trash"></i></button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% include '_pagination.html' %}
+    {% endif %}
+</div>
+
+<script>
+async function deleteSale(id, btnElement) {
+    if (!confirm('Delete this sale? Stock will be returned for its items where applicable. This cannot be undone.')) {
+        return;
+    }
+
+    const icon = btnElement.querySelector('i');
+    const originalClass = icon.className;
+    icon.className = 'ph ph-spinner ph-spin';
+    btnElement.disabled = true;
+
+    try {
+        const response = await fetch(`/api/sales/${id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': window.PHARMACY.csrf }
+        });
+        if (response.ok) {
+            const row = btnElement.closest('tr');
+            row.classList.add('row-leaving');
+            setTimeout(() => row.remove(), 300);
+            window.PHARMACY_TOAST && window.PHARMACY_TOAST('Sale deleted and stock returned.', 'success', 'Deleted');
+        } else {
+            const result = await response.json().catch(() => ({}));
+            window.PHARMACY_TOAST && window.PHARMACY_TOAST(result.error || 'Delete failed.', 'error', 'Delete failed');
+            btnElement.disabled = false;
+            icon.className = originalClass;
+        }
+    } catch (err) {
+        window.PHARMACY_TOAST && window.PHARMACY_TOAST('Network error.', 'error', 'Delete failed');
+        btnElement.disabled = false;
+        icon.className = originalClass;
+    }
+}
+</script>
+{% endblock %}

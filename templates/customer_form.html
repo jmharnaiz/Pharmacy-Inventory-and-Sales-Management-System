@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block page_title %}{% if customer %}Edit Customer{% else %}Add New Customer{% endif %}{% endblock %}
+{% block breadcrumbs %}Home > Customers > {% if customer %}Edit{% else %}Add{% endif %}{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <div class="form-header">
+        <div class="form-title-area">
+            <div class="form-icon"><i class="ph ph-user"></i></div>
+            <div>
+                <h3>{% if customer %}Edit Customer{% else %}Add New Customer{% endif %}</h3>
+            </div>
+        </div>
+        <div class="form-actions">
+            <a href="/ui/customers" class="btn btn-outline">Cancel</a>
+            <button type="submit" form="customerForm" id="submitBtn" class="btn btn-primary">
+                <i class="ph ph-floppy-disk" id="btnIcon"></i> Save
+            </button>
+        </div>
+    </div>
+
+    <div id="generalError" class="error-banner" style="display: none;">
+        <i class="ph ph-warning-circle"></i> <span id="generalErrorText"></span>
+    </div>
+
+    <form id="customerForm" data-mode="{% if customer %}edit{% else %}create{% endif %}" data-id="{{ customer.id if customer else '' }}" class="form-grid">
+        <div class="form-main-col">
+            <div class="grid-2">
+                <div class="form-group">
+                    <label>Customer Name *</label>
+                    <input type="text" name="customer_name" value="{{ customer.customer_name if customer else '' }}" required>
+                    <span class="text-xs text-danger field-error" id="error-customer_name"></span>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" value="{{ customer.email if customer else '' }}">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="text" name="phone" value="{{ customer.phone if customer else '' }}">
+                </div>
+                <div class="form-group">
+                    <label>Address</label>
+                    <input type="text" name="address" value="{{ customer.address if customer else '' }}">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="status">
+                        <option value="Active" {% if customer and customer.status == 'Active' %}selected{% endif %}>Active</option>
+                        <option value="Inactive" {% if customer and customer.status == 'Inactive' %}selected{% endif %}>Inactive</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+document.getElementById('customerForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    document.querySelectorAll('.field-error').forEach(el => el.textContent = '');
+    document.getElementById('generalError').style.display = 'none';
+    
+    const form = e.target;
+    const submitBtn = document.getElementById('submitBtn');
+    const btnIcon = document.getElementById('btnIcon');
+    const mode = form.getAttribute('data-mode');
+    const recordId = form.getAttribute('data-id');
+    
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    
+    submitBtn.disabled = true;
+    btnIcon.className = 'ph ph-spinner ph-spin';
+    
+    try {
+        const url = mode === 'edit' ? `/api/customers/${recordId}` : '/api/customers/';
+        const method = mode === 'edit' ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': window.PHARMACY.csrf },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+            const message = mode === 'edit' ? 'Customer updated.' : 'Customer added.';
+            window.location.href = '/ui/customers?saved=' + encodeURIComponent(message);
+        } else if (response.status === 422) {
+            const errorField = document.getElementById(`error-${result.field}`);
+            if (errorField) errorField.textContent = result.error;
+            else {
+                document.getElementById('generalErrorText').textContent = result.error;
+                document.getElementById('generalError').style.display = 'flex';
+            }
+        } else {
+            document.getElementById('generalErrorText').textContent = result.error || 'An unexpected error occurred.';
+            document.getElementById('generalError').style.display = 'flex';
+        }
+    } catch (err) {
+        document.getElementById('generalErrorText').textContent = 'Network error.';
+        document.getElementById('generalError').style.display = 'flex';
+    } finally {
+        submitBtn.disabled = false;
+        btnIcon.className = 'ph ph-floppy-disk';
+    }
+});
+</script>
+{% endblock %}

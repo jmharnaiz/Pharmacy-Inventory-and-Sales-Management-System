@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block breadcrumbs %}Administration > {{ title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h3>{{ title }}</h3>
+        <p>{{ description if description else 'Add and manage ' ~ title|lower ~ '.' }}</p>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="section-head">
+        <h4><i class="ph ph-plus-circle" style="color: var(--brand);"></i> Add new</h4>
+    </div>
+    <form action="{{ form_action }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="{% if fields|length > 2 %}grid-3{% else %}grid-2{% endif %}">
+            {% for f in fields %}
+            <div class="form-group" style="margin-bottom: 14px;">
+                <label>{{ labels[f] if labels and f in labels else f|replace('_', ' ')|title }}</label>
+                {% if selects and f in selects %}
+                <select name="{{ f }}">
+                    {% for value, text in selects[f] %}
+                    <option value="{{ value }}">{{ text }}</option>
+                    {% endfor %}
+                </select>
+                {% else %}
+                <input type="{{ field_types[f] if field_types and f in field_types else 'text' }}"
+                       name="{{ f }}"
+                       placeholder="{{ labels[f] if labels and f in labels else f|replace('_', ' ')|title }}"
+                       {% if not (optional and f in optional) %}required{% endif %}>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="ph ph-plus"></i> Add</button>
+    </form>
+</div>
+
+<div class="card table-card" style="margin-top: 20px;">
+    {% if items|length == 0 %}
+    <div class="empty-state">
+        <div class="empty-icon-wrapper">
+            <i class="ph ph-folder-open" style="font-size: 48px; color: var(--muted-light);"></i>
+        </div>
+        <h4>No records yet</h4>
+        <p>Everything you add above will be listed here.</p>
+    </div>
+    {% else %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                {% for key in items[0].keys() %}
+                <th>{{ key|replace('_', ' ')|title }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                {% for key in item.keys() %}
+                <td>{{ item[key] if item[key] is not none else '-' }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endblock %}

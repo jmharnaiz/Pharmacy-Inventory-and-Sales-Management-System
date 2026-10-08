@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in — {% if store_name %}{{ store_name }}{% else %}Pharmacy Management System{% endif %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background:
+                radial-gradient(1000px 500px at 15% -10%, rgba(11, 130, 67, 0.10), transparent 60%),
+                radial-gradient(800px 400px at 110% 110%, rgba(2, 132, 199, 0.08), transparent 60%),
+                var(--bg);
+        }
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            padding: 36px 32px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            animation: fade-in 0.3s ease;
+        }
+        .login-brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 28px;
+            text-align: center;
+        }
+        .login-brand .logo-mark { width: 52px; height: 52px; font-size: 26px; border-radius: 16px; }
+        .login-brand h2 { font-size: 20px; }
+        .login-brand p { font-size: 13.5px; color: var(--muted); }
+        .login-hint {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 12.5px;
+            color: var(--muted-light);
+        }
+    </style>
+</head>
+<body>
+    <div class="card login-card">
+        <div class="login-brand">
+            <div class="logo-mark"><i class="ph ph-first-aid"></i></div>
+            <div>
+                <h2>Pharmacy Management</h2>
+                <p>Inventory &amp; Sales Management System</p>
+            </div>
+        </div>
+
+        {% if error %}
+        <div class="error-banner"><i class="ph ph-x-circle"></i> {{ error }}</div>
+        {% endif %}
+
+        <form action="/login" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" placeholder="Enter your username"
+                       autocomplete="username" autofocus required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Enter your password"
+                       autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" style="padding: 12px;">
+                <i class="ph ph-sign-in"></i> Sign In
+            </button>
+        </form>
+
+        <p class="login-hint"><i class="ph ph-lock-key"></i> Authorized staff only{% if store_name %} · {{ store_name }}{% endif %}</p>
+    </div>
+
+    <!-- Flashes (e.g. "Signed out") shown as toasts -->
+    <div class="toast-wrap" id="toastWrap">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+            <div class="toast {% if category == 'error' %}is-error{% elif category == 'warning' %}is-warning{% endif %}">
+                <i class="ph {% if category == 'error' %}ph-x-circle{% elif category == 'warning' %}ph-warning-circle{% else %}ph-check-circle{% endif %}"></i>
+                <div>{{ message }}</div>
+            </div>
+            {% endfor %}
+        {% endwith %}
+    </div>
+    <script>
+    (function () {
+        var wrap = document.getElementById('toastWrap');
+        Array.prototype.slice.call(wrap.querySelectorAll('.toast')).forEach(function (toast, index) {
+            setTimeout(function () {
+                toast.classList.add('is-leaving');
+                setTimeout(function () { toast.remove(); }, 250);
+            }, 3500 + index * 150);
+        });
+    })();
+    </script>
+</body>
+</html>

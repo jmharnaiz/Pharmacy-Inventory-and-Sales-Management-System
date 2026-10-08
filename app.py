@@ -1,504 +1,350 @@
-"""
-app.py — Pharmacy Inventory and Sales Management System
-Wire: route -> validation (422) -> thin controller (201/200) -> standardized envelope
-Week 4 + Week 5 Deliverable 2 (Routing, Logic & Tests, 25%)
-Repo: https://github.com/jmharnaiz/Pharmacy-Inventory-and-Sales-Management-System
-Drag-and-drop to repo root. Run: pip install -r requirements.txt && python app.py
-"""
-import re
-from datetime import datetime
-from flask import Flask, request, jsonify, session
-from functools import wraps
-from src.validation import (
-    validation_error, success_response, require_roles,
-    _is_int, _is_number, EMAIL_RE, PHONE_RE, CODE_RE,
-    ALLOWED_CATEGORIES, ALLOWED_STATUSES, ALLOWED_PAYMENT,
-    is_valid_date_ymd, is_future_date
+import os
+import secrets
+from math import ceil
+from datetime import date, timedelta
+
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from routes.medicines import medicines_bp
+from routes.customers import customers_bp
+from routes.suppliers import suppliers_bp
+from routes.sales import sales_bp
+from routes.extras import extras_bp
+from controllers.medicines import (
+    get_all_medicines, get_medicine_by_id, search_medicines,
+    list_categories, LOW_STOCK_THRESHOLD,
 )
-from src.models.db import init_db, get_db
-from src.controllers.medicine_controller import (
-    create_medicine_controller, list_medicines_controller, show_medicine_controller,
-    update_medicine_controller, delete_medicine_controller
-)
-from src.controllers.supplier_controller import (
-    create_supplier_controller, list_suppliers_controller, show_supplier_controller,
-    update_supplier_controller, delete_supplier_controller
-)
-from src.controllers.customer_controller import (
-    create_customer_controller, list_customers_controller, show_customer_controller,
-    update_customer_controller, delete_customer_controller
-)
-from src.controllers.sale_controller import (
-    create_sale_controller, list_sales_controller, show_sale_controller,
-    update_sale_status_controller
-)
+from controllers.customers import get_all_customers, get_customer_by_id, search_customers
+from controllers.suppliers import get_supplier_by_id, search_suppliers
+from controllers.sales import get_sale_by_id, search_sales, get_sale_items
+from controllers.security import check_password
+from controllers.settings import get_setting, int_setting
+from db import ensure_schema, get_db
 
 app = Flask(__name__)
-app.secret_key = "pharmacy_secret_2026"
 
-def login_required(f):
-    @wraps(f)
-    def w(*a, **kw):
-        if "user_id" not in session:
-            return jsonify({"status":401,"error":"login required","field":"auth"}),401
-        return f(*a, **kw)
-    return w
 
-# ---------- Auth ----------
-@app.route("/auth/login", methods=["POST"])
+def _load_secret_key():
+    """Secret key from the environment, or a persisted generated value.
+
+    A random key is generated once and saved to `.secret_key` so sessions
+    survive restarts in development, while `SECRET_KEY` in the environment
+    wins in any real deployment. On serverless (Vercel) the filesystem is
+    read-only, so `SECRET_KEY` must be provided there; without it the key
+    changes every cold start and users just get signed out.
+    """
+    env_key = os.environ.get('SECRET_KEY')
+    if env_key:
+        return env_key
+    if os.environ.get('VERCEL') == '1':
+        return secrets.token_hex(32)
+    key_path = os.path.join(os.path.dirname(__file__), '.secret_key')
+    if os.path.exists(key_path):
+        with open(key_path) as fh:
+            persisted = fh.read().strip()
+        if persisted:
+            return persisted
+    key = secrets.token_hex(32)
+    try:
+        with open(key_path, 'w') as fh:
+            fh.write(key)
+    except OSError:
+        pass
+    return key
+
+
+app.secret_key = _load_secret_key()
+
+# Creates any tables added since the database file was generated (idempotent).
+ensure_schema()
+
+app.register_blueprint(medicines_bp, url_prefix='/api/medicines')
+app.register_blueprint(customers_bp, url_prefix='/api/customers')
+app.register_blueprint(suppliers_bp, url_prefix='/api/suppliers')
+app.register_blueprint(sales_bp, url_prefix='/api/sales')
+app.register_blueprint(extras_bp, url_prefix='/ui')
+
+PER_PAGE = 10
+
+LOGIN_EXEMPT_ENDPOINTS = {'login', 'static'}
+
+
+@app.before_request
+def ensure_csrf_token():
+    """Give every visitor a CSRF token so rendered forms always have one."""
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(16)
+
+
+@app.before_request
+def require_login():
+    """Protect every page and API endpoint behind a session.
+
+    Having no session is a redirect for the UI and a 401 for API calls.
+    """
+    if app.config.get('TESTING'):
+        return None
+    if request.endpoint in LOGIN_EXEMPT_ENDPOINTS:
+        return None
+    if 'user' not in session:
+        if request.path.startswith('/api/'):
+            return jsonify({"status": 401, "error": "Authentication required. Please sign in."}), 401
+        return redirect('/login')
+
+
+@app.before_request
+def csrf_protect():
+    """Reject state-changing requests without a valid CSRF token."""
+    if app.config.get('TESTING'):
+        return None
+    if request.method in ('GET', 'HEAD', 'OPTIONS', 'TRACE'):
+        return None
+    submitted = request.form.get('csrf_token') or request.headers.get('X-CSRFToken') or ''
+    if not submitted or submitted != session.get('csrf_token'):
+        if request.path.startswith('/api/'):
+            return jsonify({"status": 400, "error": "Missing or invalid CSRF token. Reload the page and try again."}), 400
+        flash('Your form session expired — please try again.', 'error')
+        return redirect(request.referrer or '/')
+
+
+@app.context_processor
+def inject_globals():
+    """Store preferences + CSRF token available to every template."""
+    return {
+        'store_name': get_setting('store_name'),
+        'currency': get_setting('currency'),
+        'low_stock_threshold': int_setting('low_stock_threshold', LOW_STOCK_THRESHOLD),
+        'csrf_token': session.get('csrf_token', ''),
+    }
+
+
+@app.context_processor
+def inject_stock_alerts():
+    """Low/out-of-stock counts for the header bell badge and sidebar."""
+    threshold = int_setting('low_stock_threshold', LOW_STOCK_THRESHOLD)
+    conn = get_db()
+    row = conn.execute(
+        'SELECT '
+        ' SUM(CASE WHEN current_stock = 0 THEN 1 ELSE 0 END) AS out_count, '
+        ' SUM(CASE WHEN current_stock > 0 AND current_stock <= ? THEN 1 ELSE 0 END) AS low_count '
+        'FROM medicines',
+        (threshold,)
+    ).fetchone()
+    conn.close()
+    out_count = row['out_count'] or 0
+    low_count = row['low_count'] or 0
+    return {
+        'stock_alerts': out_count + low_count,
+        'out_of_stock_count': out_count,
+        'low_stock_count': low_count,
+    }
+
+
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    data=request.get_json(silent=True) or {}
-    username=str(data.get("username","")).strip()
-    password=str(data.get("password","")).strip()
-    if not username: return validation_error("username","username is required")
-    if not password: return validation_error("password","password is required")
-    conn=get_db(); user=conn.execute("SELECT * FROM users WHERE username=? AND password=?",(username,password)).fetchone(); conn.close()
-    if not user: return jsonify({"status":401,"error":"invalid credentials","field":"auth"}),401
-    session["user_id"]=user["id"]; session["role"]=user["role"]; session["username"]=user["username"]
-    return success_response({"role":user["role"], "username":user["username"]},200)
+    if request.method == 'POST':
+        user = (request.form.get('username') or '').strip()
+        pwd = request.form.get('password') or ''
+        conn = get_db()
+        u = conn.execute('SELECT * FROM users WHERE username = ?', (user,)).fetchone()
+        conn.close()
+        if u and check_password(u['password'], pwd):
+            session['user'] = user
+            session['role'] = u['role']
+            flash('Welcome back, %s!' % user.title())
+            return redirect('/')
+        return render_template('login.html', error='Invalid credentials')
+    return render_template('login.html')
 
-@app.route("/auth/logout", methods=["POST"])
+@app.route('/logout')
 def logout():
     session.clear()
-    return success_response({"ok":True})
+    flash('You have been signed out.')
+    return redirect('/login')
 
-@app.route("/auth/change-password", methods=["PUT"])
-@login_required
-def changePassword():
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    old=str(data.get("old_password","")); new=str(data.get("new_password","")); confirm=str(data.get("confirm_password",""))
-    if not old: return validation_error("old_password","old_password is required")
-    if not new: return validation_error("new_password","new_password is required")
-    if len(new)<8 or len(new)>100: return validation_error("new_password","new_password must be 8-100 chars")
-    if not confirm: return validation_error("confirm_password","confirm_password is required")
-    if new!=confirm: return validation_error("confirm_password","confirm_password must match new_password")
-    return success_response({"changed":True},200)
 
-# ---------- Medicines ----------
-@app.route("/medicines", methods=["POST"])
-@login_required
-def createMedicineRoute():
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required and must be JSON")
-    # presence + type + length/range + format + allowed values + referential
-    code=str(data.get("medicine_code","")).strip()
-    if not code: return validation_error("medicine_code","medicine_code is required")
-    if len(code)<1 or len(code)>20: return validation_error("medicine_code","medicine_code must be 1-20 chars")
-    if not CODE_RE.match(code): return validation_error("medicine_code","medicine_code format invalid (alphanumeric, -, _)")
-    name=str(data.get("medicine_name","")).strip()
-    if not name: return validation_error("medicine_name","medicine_name is required")
-    if len(name)>100: return validation_error("medicine_name","medicine_name too long (max 100)")
-    generic=str(data.get("generic_name","")).strip()
-    if generic and len(generic)>100: return validation_error("generic_name","generic_name too long (max 100)")
-    category=str(data.get("category","")).strip()
-    if not category: return validation_error("category","category is required")
-    if category not in ALLOWED_CATEGORIES: return validation_error("category",f"category must be one of {', '.join(sorted(ALLOWED_CATEGORIES))}")
-    brand=str(data.get("brand","")).strip()
-    if not brand: return validation_error("brand","brand is required")
-    if len(brand)>100: return validation_error("brand","brand too long (max 100)")
-    supplier_id=data.get("supplier_id")
-    if supplier_id is not None and str(supplier_id).strip()!="":
-        if not _is_int(supplier_id): return validation_error("supplier_id","supplier_id must be a number")
-        conn=get_db()
-        if not conn.execute("SELECT id FROM suppliers WHERE id=?",(int(supplier_id),)).fetchone():
-            conn.close(); return validation_error("supplier_id","supplier does not exist (referential)")
-        conn.close()
-        supplier_id=int(supplier_id)
-    else:
-        supplier_id=None
-    unit_price=data.get("unit_price")
-    if unit_price is None or str(unit_price).strip()=="": return validation_error("unit_price","unit_price is required")
-    if not _is_number(unit_price): return validation_error("unit_price","unit_price must be a number")
-    if float(unit_price)<0 or float(unit_price)>999999: return validation_error("unit_price","unit_price out of range (0-999999)")
-    qty=data.get("quantity")
-    if qty is None or str(qty).strip()=="": return validation_error("quantity","quantity is required")
-    if not _is_int(qty): return validation_error("quantity","quantity must be a number")
-    if int(qty)<0 or int(qty)>99999: return validation_error("quantity","quantity out of range (0-99999)")
-    exp=str(data.get("expiration_date","")).strip()
-    if not exp: return validation_error("expiration_date","expiration_date is required")
-    if not is_valid_date_ymd(exp): return validation_error("expiration_date","expiration_date must be YYYY-MM-DD format")
-    # optionally ensure future date (defensive): allow past but status Expired handling, here we just validate format; future check for non-expired
-    status=str(data.get("status","")).strip() or "Available"
-    if status not in ALLOWED_STATUSES: return validation_error("status",f"status must be one of {', '.join(sorted(ALLOWED_STATUSES))}")
-    conn=get_db()
-    if conn.execute("SELECT id FROM medicines WHERE medicine_code=?",(code,)).fetchone():
-        conn.close(); return validation_error("medicine_code","medicine_code already exists")
+# --- Pagination helpers -------------------------------------------------------
+
+def _page_base():
+    """Current URL without the `page` param, e.g. `/ui/medicines?q=abc&`."""
+    from urllib.parse import urlencode
+    pairs = [(k, v) for k, v in request.args.items(multi=True) if k != 'page']
+    return request.path + ('?' + urlencode(pairs) + '&' if pairs else '?')
+
+
+def _paginate(page, total, per_page=PER_PAGE):
+    pages = max(1, ceil((total or 0) / per_page))
+    page = min(max(page or 1, 1), pages)
+    return {'page': page, 'pages': pages, 'total': total,
+            'per_page': per_page, 'page_base': _page_base()}
+
+
+@app.route('/')
+def dashboard():
+    conn = get_db()
+    threshold = int_setting('low_stock_threshold', LOW_STOCK_THRESHOLD)
+
+    totals = conn.execute(
+        'SELECT '
+        ' (SELECT COUNT(*) FROM medicines) AS total_medicines, '
+        ' (SELECT COALESCE(SUM(cost_price * current_stock), 0) FROM medicines) AS stock_value, '
+        ' (SELECT COALESCE(SUM(total_amount), 0) FROM sales) AS total_sales, '
+        ' (SELECT COUNT(*) FROM customers) AS total_customers, '
+        ' (SELECT COALESCE(SUM(total_amount), 0) FROM sales '
+        '  WHERE date(date_time) = date(\'now\')) AS sales_today, '
+        ' (SELECT COUNT(*) FROM sales WHERE date(date_time) = date(\'now\')) AS sales_today_count'
+    ).fetchone()
+
+    # Sales for the last 7 days (zero-filled so the chart has a full week).
+    rows = conn.execute(
+        "SELECT date(date_time) AS day, COALESCE(SUM(total_amount), 0) AS amount "
+        "FROM sales WHERE date(date_time) >= date('now', '-6 days') "
+        "GROUP BY day ORDER BY day"
+    ).fetchall()
+    by_day = {r['day']: r['amount'] for r in rows}
+    chart_labels, chart_values = [], []
+    for i in range(6, -1, -1):
+        d = date.today() - timedelta(days=i)
+        key = d.isoformat()
+        chart_labels.append(d.strftime('%b %d'))
+        chart_values.append(round(by_day.get(key, 0), 2))
+
+    # Stock distribution across categories (top 6).
+    cats = conn.execute(
+        "SELECT COALESCE(NULLIF(category, ''), 'Uncategorized') AS cat, "
+        " SUM(current_stock) AS units FROM medicines "
+        " GROUP BY cat ORDER BY units DESC LIMIT 6"
+    ).fetchall()
+
+    recent_sales = conn.execute(
+        'SELECT sales.*, customers.customer_name '
+        'FROM sales LEFT JOIN customers ON customers.id = sales.customer_id '
+        'ORDER BY sales.date_time DESC LIMIT 5'
+    ).fetchall()
+
+    low_stock = conn.execute(
+        'SELECT * FROM medicines WHERE current_stock <= ? '
+        'ORDER BY current_stock ASC LIMIT 6',
+        (threshold,)
+    ).fetchall()
+
     conn.close()
-    validated={"medicine_code":code,"medicine_name":name,"generic_name":generic,"category":category,"brand":brand,"supplier_id":supplier_id,"unit_price":float(unit_price),"quantity":int(qty),"expiration_date":exp,"status":status}
-    return create_medicine_controller(validated)
 
-@app.route("/medicines", methods=["GET"])
-@login_required
-def listMedicinesRoute():
-    return list_medicines_controller()
+    return render_template(
+        'dashboard.html',
+        total_medicines=totals['total_medicines'],
+        total_stock_value=totals['stock_value'],
+        total_sales=totals['total_sales'],
+        total_customers=totals['total_customers'],
+        sales_today=totals['sales_today'],
+        sales_today_count=totals['sales_today_count'],
+        chart_labels=chart_labels,
+        chart_values=chart_values,
+        category_labels=[c['cat'] for c in cats],
+        category_units=[c['units'] for c in cats],
+        recent_sales=[dict(r) for r in recent_sales],
+        low_stock=[dict(r) for r in low_stock],
+    )
 
-@app.route("/medicines/<int:id>", methods=["GET"])
-@login_required
-def showMedicineRoute(id):
-    conn=get_db()
-    if not conn.execute("SELECT id FROM medicines WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","medicine does not exist")
-    conn.close()
-    return show_medicine_controller(id)
+@app.route('/ui/medicines')
+def ui_medicines_list():
+    q = request.args.get('q', '').strip()
+    category = request.args.get('category', '').strip()
+    sort = request.args.get('sort', '').strip()
+    page = request.args.get('page', 1, type=int) or 1
 
-@app.route("/medicines/<int:id>", methods=["PUT"])
-@login_required
-def updateMedicineRoute(id):
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    conn=get_db()
-    if not conn.execute("SELECT id FROM medicines WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","medicine does not exist")
-    conn.close()
-    code=str(data.get("medicine_code","")).strip()
-    if not code: return validation_error("medicine_code","medicine_code is required")
-    if len(code)>20: return validation_error("medicine_code","medicine_code must be 1-20 chars")
-    if not CODE_RE.match(code): return validation_error("medicine_code","medicine_code format invalid")
-    name=str(data.get("medicine_name","")).strip()
-    if not name: return validation_error("medicine_name","medicine_name is required")
-    if len(name)>100: return validation_error("medicine_name","medicine_name too long")
-    category=str(data.get("category","")).strip()
-    if not category: return validation_error("category","category is required")
-    if category not in ALLOWED_CATEGORIES: return validation_error("category",f"category must be one of {', '.join(sorted(ALLOWED_CATEGORIES))}")
-    brand=str(data.get("brand","")).strip()
-    if not brand: return validation_error("brand","brand is required")
-    supplier_id=data.get("supplier_id")
-    if supplier_id is not None and str(supplier_id).strip()!="":
-        if not _is_int(supplier_id): return validation_error("supplier_id","supplier_id must be a number")
-        conn=get_db()
-        if not conn.execute("SELECT id FROM suppliers WHERE id=?",(int(supplier_id),)).fetchone():
-            conn.close(); return validation_error("supplier_id","supplier does not exist (referential)")
-        conn.close()
-        supplier_id=int(supplier_id)
-    else:
-        supplier_id=None
-    unit_price=data.get("unit_price")
-    if unit_price is None or str(unit_price).strip()=="": return validation_error("unit_price","unit_price is required")
-    if not _is_number(unit_price): return validation_error("unit_price","unit_price must be a number")
-    if float(unit_price)<0 or float(unit_price)>999999: return validation_error("unit_price","unit_price out of range (0-999999)")
-    qty=data.get("quantity")
-    if qty is None or str(qty).strip()=="": return validation_error("quantity","quantity is required")
-    if not _is_int(qty): return validation_error("quantity","quantity must be a number")
-    if int(qty)<0 or int(qty)>99999: return validation_error("quantity","quantity out of range (0-99999)")
-    exp=str(data.get("expiration_date","")).strip()
-    if not exp: return validation_error("expiration_date","expiration_date is required")
-    if not is_valid_date_ymd(exp): return validation_error("expiration_date","expiration_date must be YYYY-MM-DD format")
-    status=str(data.get("status","")).strip() or "Available"
-    if status not in ALLOWED_STATUSES: return validation_error("status",f"status must be one of {', '.join(sorted(ALLOWED_STATUSES))}")
-    # unique check excluding self
-    conn=get_db()
-    row=conn.execute("SELECT id FROM medicines WHERE medicine_code=? AND id!=?",(code,id)).fetchone()
-    conn.close()
-    if row: return validation_error("medicine_code","medicine_code already exists")
-    validated={"medicine_code":code,"medicine_name":name,"generic_name":str(data.get("generic_name","")).strip(),"category":category,"brand":brand,"supplier_id":supplier_id,"unit_price":float(unit_price),"quantity":int(qty),"expiration_date":exp,"status":status}
-    return update_medicine_controller(id, validated)
+    medicines, total = search_medicines(q=q, category=category, sort=sort,
+                                        page=page, per_page=PER_PAGE)
+    pager = _paginate(page, total)
+    return render_template('medicines_list.html', medicines=medicines,
+                           q=q, category=category, sort=sort,
+                           categories=list_categories(), pager=pager)
 
-@app.route("/medicines/<int:id>", methods=["DELETE"])
-@login_required
-def deleteMedicineRoute(id):
-    auth=require_roles("Admin")
-    if auth: return auth
-    conn=get_db()
-    if not conn.execute("SELECT id FROM medicines WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","medicine does not exist")
-    # referential: medicine has sale_items?
-    if conn.execute("SELECT id FROM sale_items WHERE medicine_id=? LIMIT 1",(id,)).fetchone():
-        conn.close(); return validation_error("id","medicine has sales records (referential)")
-    conn.close()
-    return delete_medicine_controller(id)
+@app.route('/ui/medicines/new')
+def ui_medicines_new():
+    return render_template('medicine_form.html', medicine=None)
 
-@app.route("/medicines/<int:id>/stock", methods=["PUT"])
-@login_required
-def updateStockRoute(id):
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    conn=get_db()
-    if not conn.execute("SELECT id FROM medicines WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","medicine does not exist")
-    conn.close()
-    qty=data.get("quantity")
-    if qty is None or str(qty).strip()=="": return validation_error("quantity","quantity is required")
-    if not _is_int(qty): return validation_error("quantity","quantity must be a number")
-    if int(qty)<0 or int(qty)>99999: return validation_error("quantity","quantity out of range (0-99999)")
-    # reuse update controller with current record values patched
-    from src.models.db import get_medicine
-    current=get_medicine(id)
-    validated={**current, "quantity": int(qty)}
-    # ensure code stays same etc.
-    return update_medicine_controller(id, validated)
+@app.route('/ui/medicines/<int:id>/edit')
+def ui_medicines_edit(id):
+    medicine = get_medicine_by_id(id)
+    if not medicine:
+        return render_template('medicine_form.html', error="Medicine not found")
+    return render_template('medicine_form.html', medicine=medicine)
 
-# ---------- Suppliers ----------
-@app.route("/suppliers", methods=["POST"])
-@login_required
-def createSupplierRoute():
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    company=str(data.get("company_name","")).strip()
-    if not company: return validation_error("company_name","company_name is required")
-    if len(company)>100: return validation_error("company_name","company_name too long (max 100)")
-    contact=str(data.get("contact_person","")).strip()
-    if not contact: return validation_error("contact_person","contact_person is required")
-    if len(contact)>100: return validation_error("contact_person","contact_person too long (max 100)")
-    phone=str(data.get("phone","")).strip()
-    if phone:
-        if len(phone)>20: return validation_error("phone","phone too long (max 20)")
-        if not PHONE_RE.match(phone): return validation_error("phone","phone format invalid")
-    email=str(data.get("email","")).strip()
-    if email:
-        if len(email)>100: return validation_error("email","email too long")
-        if not EMAIL_RE.match(email): return validation_error("email","email format invalid")
-    address=str(data.get("address",""))
-    if len(address)>200: return validation_error("address","address too long (max 200)")
-    validated={"company_name":company,"contact_person":contact,"phone":phone,"email":email,"address":address}
-    return create_supplier_controller(validated)
+# Customers UI
+@app.route('/ui/customers')
+def ui_customers_list():
+    q = request.args.get('q', '').strip()
+    status = request.args.get('status', '').strip()
+    sort = request.args.get('sort', '').strip()
+    page = request.args.get('page', 1, type=int) or 1
 
-@app.route("/suppliers", methods=["GET"])
-@login_required
-def listSuppliersRoute(): return list_suppliers_controller()
+    customers, total = search_customers(q=q, status=status, sort=sort,
+                                        page=page, per_page=PER_PAGE)
+    pager = _paginate(page, total)
+    return render_template('customers_list.html', customers=customers,
+                           q=q, status=status, sort=sort, pager=pager)
 
-@app.route("/suppliers/<int:id>", methods=["GET"])
-@login_required
-def showSupplierRoute(id):
-    conn=get_db()
-    if not conn.execute("SELECT id FROM suppliers WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","supplier does not exist")
-    conn.close()
-    return show_supplier_controller(id)
+@app.route('/ui/customers/new')
+def ui_customers_new():
+    return render_template('customer_form.html', customer=None)
 
-@app.route("/suppliers/<int:id>", methods=["PUT"])
-@login_required
-def updateSupplierRoute(id):
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    conn=get_db()
-    if not conn.execute("SELECT id FROM suppliers WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","supplier does not exist")
-    conn.close()
-    company=str(data.get("company_name","")).strip()
-    if not company: return validation_error("company_name","company_name is required")
-    if len(company)>100: return validation_error("company_name","company_name too long")
-    contact=str(data.get("contact_person","")).strip()
-    if not contact: return validation_error("contact_person","contact_person is required")
-    email=str(data.get("email","")).strip()
-    if email and not EMAIL_RE.match(email): return validation_error("email","email format invalid")
-    phone=str(data.get("phone","")).strip()
-    if phone and not PHONE_RE.match(phone): return validation_error("phone","phone format invalid")
-    validated={"company_name":company,"contact_person":contact,"phone":phone,"email":email,"address":data.get("address","")}
-    return update_supplier_controller(id, validated)
+@app.route('/ui/customers/<int:id>/edit')
+def ui_customers_edit(id):
+    customer = get_customer_by_id(id)
+    return render_template('customer_form.html', customer=customer)
 
-@app.route("/suppliers/<int:id>", methods=["DELETE"])
-@login_required
-def deleteSupplierRoute(id):
-    auth=require_roles("Admin")
-    if auth: return auth
-    conn=get_db()
-    if not conn.execute("SELECT id FROM suppliers WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","supplier does not exist")
-    if conn.execute("SELECT id FROM medicines WHERE supplier_id=? LIMIT 1",(id,)).fetchone():
-        conn.close(); return validation_error("id","supplier has medicines (referential)")
-    conn.close()
-    return delete_supplier_controller(id)
+# Suppliers UI
+@app.route('/ui/suppliers')
+def ui_suppliers_list():
+    q = request.args.get('q', '').strip()
+    status = request.args.get('status', '').strip()
+    sort = request.args.get('sort', '').strip()
+    page = request.args.get('page', 1, type=int) or 1
 
-# ---------- Customers ----------
-@app.route("/customers", methods=["POST"])
-@login_required
-def createCustomerRoute():
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    name=str(data.get("customer_name","")).strip()
-    if not name: return validation_error("customer_name","customer_name is required")
-    if len(name)>100: return validation_error("customer_name","customer_name too long (max 100)")
-    contact=str(data.get("contact_number","")).strip()
-    if contact:
-        if len(contact)>20: return validation_error("contact_number","contact_number too long")
-        if not PHONE_RE.match(contact): return validation_error("contact_number","contact_number format invalid")
-    email=str(data.get("email","")).strip()
-    if email:
-        if len(email)>100: return validation_error("email","email too long")
-        if not EMAIL_RE.match(email): return validation_error("email","email format invalid")
-    address=str(data.get("address",""))
-    if len(address)>200: return validation_error("address","address too long (max 200)")
-    validated={"customer_name":name,"contact_number":contact,"email":email,"address":address}
-    return create_customer_controller(validated)
+    suppliers, total = search_suppliers(q=q, status=status, sort=sort,
+                                        page=page, per_page=PER_PAGE)
+    pager = _paginate(page, total)
+    return render_template('suppliers_list.html', suppliers=suppliers,
+                           q=q, status=status, sort=sort, pager=pager)
 
-@app.route("/customers", methods=["GET"])
-@login_required
-def listCustomersRoute(): return list_customers_controller()
+@app.route('/ui/suppliers/new')
+def ui_suppliers_new():
+    return render_template('supplier_form.html', supplier=None)
 
-@app.route("/customers/<int:id>", methods=["GET"])
-@login_required
-def showCustomerRoute(id):
-    conn=get_db()
-    if not conn.execute("SELECT id FROM customers WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","customer does not exist")
-    conn.close()
-    return show_customer_controller(id)
+@app.route('/ui/suppliers/<int:id>/edit')
+def ui_suppliers_edit(id):
+    supplier = get_supplier_by_id(id)
+    return render_template('supplier_form.html', supplier=supplier)
 
-@app.route("/customers/<int:id>", methods=["PUT"])
-@login_required
-def updateCustomerRoute(id):
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    conn=get_db()
-    if not conn.execute("SELECT id FROM customers WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","customer does not exist")
-    conn.close()
-    name=str(data.get("customer_name","")).strip()
-    if not name: return validation_error("customer_name","customer_name is required")
-    if len(name)>100: return validation_error("customer_name","customer_name too long")
-    contact=str(data.get("contact_number","")).strip()
-    if contact and not PHONE_RE.match(contact): return validation_error("contact_number","contact_number format invalid")
-    email=str(data.get("email","")).strip()
-    if email and not EMAIL_RE.match(email): return validation_error("email","email format invalid")
-    validated={"customer_name":name,"contact_number":contact,"email":email,"address":data.get("address","")}
-    return update_customer_controller(id, validated)
+# Sales UI
+@app.route('/ui/sales')
+def ui_sales_list():
+    q = request.args.get('q', '').strip()
+    sort = request.args.get('sort', '').strip()
+    page = request.args.get('page', 1, type=int) or 1
 
-@app.route("/customers/<int:id>", methods=["DELETE"])
-@login_required
-def deleteCustomerRoute(id):
-    auth=require_roles("Admin")
-    if auth: return auth
-    conn=get_db()
-    if not conn.execute("SELECT id FROM customers WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","customer does not exist")
-    if conn.execute("SELECT id FROM sales WHERE customer_id=? LIMIT 1",(id,)).fetchone():
-        conn.close(); return validation_error("id","customer has sales records (referential)")
-    conn.close()
-    return delete_customer_controller(id)
+    sales, total = search_sales(q=q, sort=sort, page=page, per_page=PER_PAGE)
+    pager = _paginate(page, total)
+    return render_template('sales_list.html', sales=sales,
+                           q=q, sort=sort, pager=pager)
 
-# ---------- Sales ----------
-@app.route("/sales", methods=["POST"])
-@login_required
-def createSaleRoute():
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required and must be JSON")
-    # items required, array 1-100, referential each medicine_id exists, qty 1-999, also stock check
-    items=data.get("items")
-    if items is None: return validation_error("items","items is required")
-    if not isinstance(items, list): return validation_error("items","items must be an array")
-    if len(items)==0: return validation_error("items","Cart empty: at least one item required")
-    if len(items)>100: return validation_error("items","items too many (max 100)")
-    validated_items=[]
-    for idx, it in enumerate(items):
-        if not isinstance(it, dict): return validation_error(f"items[{idx}]","item must be an object")
-        mid=it.get("medicine_id")
-        if mid is None or str(mid).strip()=="": return validation_error(f"items[{idx}].medicine_id","medicine_id is required")
-        if not _is_int(mid): return validation_error(f"items[{idx}].medicine_id","medicine_id must be a number")
-        qty=it.get("quantity")
-        if qty is None or str(qty).strip()=="": return validation_error(f"items[{idx}].quantity","quantity is required")
-        if not _is_int(qty): return validation_error(f"items[{idx}].quantity","quantity must be a number")
-        if int(qty)<1 or int(qty)>999: return validation_error(f"items[{idx}].quantity","quantity out of range (1-999)")
-        conn=get_db()
-        med=conn.execute("SELECT * FROM medicines WHERE id=?",(int(mid),)).fetchone()
-        conn.close()
-        if not med: return validation_error("items.medicine_id","medicine does not exist (referential)")
-        # stock check (referential + range)
-        if int(qty) > med["quantity"]: return validation_error(f"items[{idx}].quantity","insufficient stock")
-        # expiration check
-        try:
-            exp_date=datetime.strptime(med["expiration_date"], "%Y-%m-%d").date()
-            if exp_date < datetime.now().date():
-                return validation_error(f"items[{idx}].medicine_id","medicine is expired")
-        except: pass
-        validated_items.append({"medicine_id":int(mid),"quantity":int(qty),"unit_price": float(med["unit_price"])})
-    customer_id=data.get("customer_id")
-    if customer_id is not None and str(customer_id).strip()!="":
-        if not _is_int(customer_id): return validation_error("customer_id","customer_id must be a number")
-        conn=get_db()
-        if not conn.execute("SELECT id FROM customers WHERE id=?",(int(customer_id),)).fetchone():
-            conn.close(); return validation_error("customer_id","customer does not exist (referential)")
-        conn.close()
-        customer_id=int(customer_id)
-    else:
-        customer_id=None
-    payment=str(data.get("payment_method","")).strip()
-    if not payment: return validation_error("payment_method","payment_method is required")
-    if payment not in ALLOWED_PAYMENT: return validation_error("payment_method",f"payment_method must be one of {', '.join(sorted(ALLOWED_PAYMENT))}")
-    status=str(data.get("status","Completed")).strip() or "Completed"
-    if status not in {"Completed","Pending","Cancelled","Hold"}: return validation_error("status","status must be one of Completed, Pending, Cancelled, Hold")
-    # total_amount: if provided validate, else compute
-    total=0
-    for it in validated_items:
-        total += it["quantity"]*it["unit_price"]
-    provided_total=data.get("total_amount")
-    if provided_total is not None and str(provided_total).strip()!="":
-        if not _is_number(provided_total): return validation_error("total_amount","total_amount must be a number")
-        if float(provided_total)<0 or float(provided_total)>9999999: return validation_error("total_amount","total_amount out of range")
-        # allow small float diff but require match
-        if abs(float(provided_total)-total) > 0.01:
-            return validation_error("total_amount","total_amount does not match items total")
-        total=float(provided_total)
-    transaction_date=str(data.get("transaction_date","")).strip() or datetime.now().strftime("%Y-%m-%d")
-    if not is_valid_date_ymd(transaction_date): return validation_error("transaction_date","transaction_date must be YYYY-MM-DD format")
-    cashier=str(data.get("cashier","")).strip() or session.get("username","")
-    validated={"transaction_date":transaction_date,"customer_id":customer_id,"cashier":cashier,"total_amount":total,"payment_method":payment,"status":status,"items":validated_items}
-    return create_sale_controller(validated)
+@app.route('/ui/sales/new')
+def ui_sales_new():
+    customers = get_all_customers()
+    medicines = get_all_medicines()
+    return render_template('sale_form.html', sale=None, customers=customers,
+                           medicines=medicines, sale_items=[])
 
-@app.route("/sales", methods=["GET"])
-@login_required
-def listSalesRoute(): return list_sales_controller()
+@app.route('/ui/sales/<int:id>/edit')
+def ui_sales_edit(id):
+    sale = get_sale_by_id(id)
+    if not sale:
+        return redirect('/ui/sales')
+    customers = get_all_customers()
+    medicines = get_all_medicines()
+    return render_template('sale_form.html', sale=sale, customers=customers,
+                           medicines=medicines, sale_items=get_sale_items(id))
 
-@app.route("/sales/<int:id>", methods=["GET"])
-@login_required
-def showSaleRoute(id):
-    conn=get_db()
-    if not conn.execute("SELECT id FROM sales WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","sale does not exist")
-    conn.close()
-    return show_sale_controller(id)
-
-@app.route("/sales/<int:id>/status", methods=["PUT"])
-@login_required
-def updateSaleStatusRoute(id):
-    data=request.get_json(silent=True)
-    if data is None: return validation_error("body","request body is required")
-    conn=get_db()
-    if not conn.execute("SELECT id FROM sales WHERE id=?",(id,)).fetchone():
-        conn.close(); return validation_error("id","sale does not exist")
-    conn.close()
-    status=str(data.get("status","")).strip()
-    if not status: return validation_error("status","status is required")
-    if not isinstance(status, str): return validation_error("status","status must be a string")
-    if status not in {"Completed","Pending","Cancelled","Hold"}: return validation_error("status",f"status must be one of Completed, Pending, Cancelled, Hold")
-    return update_sale_status_controller(id, {"status": status})
-
-@app.route("/sales/<int:id>/cancel", methods=["POST"])
-@login_required
-def cancelSaleRoute(id):
-    # sensitive: Admin/Cashier only → 403 for Pharmacist
-    auth=require_roles("Admin","Cashier")
-    if auth: return auth
-    conn=get_db()
-    row=conn.execute("SELECT * FROM sales WHERE id=?",(id,)).fetchone()
-    if not row:
-        conn.close(); return validation_error("id","sale does not exist")
-    if row["status"]=="Cancelled":
-        conn.close(); return validation_error("status","sale already cancelled")
-    conn.close()
-    return update_sale_status_controller(id, {"status":"Cancelled"})
-
-# ---------- 404/500 ----------
-@app.errorhandler(404)
-def handle_404(e):
-    if request.path.startswith(("/api","/medicines","/suppliers","/customers","/sales","/auth")):
-        return jsonify({"status":404,"error":"not found","field":"url"}),404
-    return "Not found",404
-
-@app.errorhandler(500)
-def handle_500(e):
-    return jsonify({"status":500,"error":"internal server error","field":"server"}),500
-
-# also expose alias routes for frontend simplicity
-@app.route("/api/sales", methods=["POST"])
-@login_required
-def apiCreateSaleAlias():
-    return createSaleRoute()
-
-@app.route("/")
-def index():
-    return jsonify({"status":200,"data":{"message":"Pharmacy API running","docs":"/docs/routes.md"}}),200
-
-if __name__=="__main__":
-    init_db()
-    app.run(debug=True, port=5000)
+if __name__ == '__main__':
+    debug = os.environ.get('FLASK_DEBUG') == '1'
+    app.run(debug=debug)
