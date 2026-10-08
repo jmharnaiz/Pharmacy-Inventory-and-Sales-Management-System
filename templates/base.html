@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ store_name }} — Pharmacy Management System</title>
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <div class="logo-mark"><i class="ph ph-first-aid"></i></div>
+            <div class="logo-text">
+                <span class="logo-title">PHARMACY</span>
+                <span class="logo-subtitle">INVENTORY AND SALES<br>MANAGEMENT SYSTEM</span>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-label">Overview</div>
+            <a href="/" class="nav-item {% if request.path == '/' %}active{% endif %}"><i class="ph ph-house"></i> Dashboard</a>
+
+            <div class="nav-label">Inventory</div>
+            <a href="/ui/medicines" class="nav-item {% if 'medicines' in request.path %}active{% endif %}"><i class="ph ph-pill"></i> Medicines</a>
+            <a href="/ui/categories" class="nav-item {% if 'categories' in request.path %}active{% endif %}"><i class="ph ph-list"></i> Categories</a>
+            <a href="/ui/purchases" class="nav-item {% if 'purchases' in request.path %}active{% endif %}"><i class="ph ph-truck"></i> Purchases</a>
+            <a href="/ui/adjustments" class="nav-item {% if 'adjustments' in request.path %}active{% endif %}"><i class="ph ph-sliders"></i> Stock Adjustment</a>
+
+            <div class="nav-label">Directory</div>
+            <a href="/ui/suppliers" class="nav-item {% if 'suppliers' in request.path %}active{% endif %}"><i class="ph ph-buildings"></i> Suppliers</a>
+            <a href="/ui/customers" class="nav-item {% if 'customers' in request.path %}active{% endif %}"><i class="ph ph-users"></i> Customers</a>
+
+            <div class="nav-label">Transactions</div>
+            <a href="/ui/sales" class="nav-item {% if 'sales' in request.path %}active{% endif %}"><i class="ph ph-shopping-cart"></i> Sales</a>
+            <a href="/ui/reports" class="nav-item {% if 'reports' in request.path %}active{% endif %}"><i class="ph ph-chart-bar"></i> Reports</a>
+
+            <div class="nav-label">Administration</div>
+            <a href="/ui/users" class="nav-item {% if 'users' in request.path %}active{% endif %}"><i class="ph ph-user-gear"></i> Users</a>
+            <a href="/ui/settings" class="nav-item {% if 'settings' in request.path %}active{% endif %}"><i class="ph ph-gear"></i> Settings</a>
+        </nav>
+
+        <div class="sidebar-user-wrapper">
+            <div class="sidebar-user">
+                <div class="user-avatar"><img src="https://ui-avatars.com/api/?name={{ session.get('user', 'User') }}&background=e6f4ea&color=0b8243" alt="User" width="40" height="40"></div>
+                <div class="user-info">
+                    <span class="user-name">{{ session.get('user', 'User')|title }}</span>
+                    <span class="user-role">{{ session.get('role', 'Staff') }}</span>
+                </div>
+            </div>
+            <a href="/logout" class="logout-link"><i class="ph ph-sign-out"></i> Log Out</a>
+        </div>
+    </aside>
+    <div class="sidebar-backdrop" onclick="document.body.classList.remove('nav-open')"></div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="top-header">
+            <div class="header-left">
+                <button class="hamburger" type="button" aria-label="Toggle navigation"
+                        onclick="document.body.classList.toggle('nav-open')">
+                    <i class="ph ph-list"></i>
+                </button>
+                <div class="header-title">
+                    <h2>{% block page_title %}Dashboard{% endblock %}</h2>
+                    <div class="breadcrumbs">{% block breadcrumbs %}Welcome back, {{ session.get('user', 'User')|title }}!{% endblock %}</div>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a href="/ui/medicines" class="notifications" title="{{ stock_alerts }} item(s) need restocking" style="text-decoration:none;">
+                    <i class="ph ph-bell"></i>
+                    <span class="badge {% if stock_alerts == 0 %}is-empty{% endif %}">{{ stock_alerts }}</span>
+                </a>
+                <div class="date-time">
+                    <div class="date-top"><i class="ph ph-calendar-blank"></i> <span id="hdrDate">&nbsp;</span></div>
+                    <div class="date-bottom" id="hdrDay">&nbsp;</div>
+                </div>
+            </div>
+        </header>
+        <div class="content-area">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+</div>
+
+<!-- Toasts: server flashes + query-string confirmations -->
+<div class="toast-wrap" id="toastWrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="toast {% if category == 'error' %}is-error{% elif category == 'warning' %}is-warning{% endif %}">
+            <i class="ph {% if category == 'error' %}ph-x-circle{% elif category == 'warning' %}ph-warning-circle{% else %}ph-check-circle{% endif %}"></i>
+            <div>{{ message }}</div>
+        </div>
+        {% endfor %}
+    {% endwith %}
+</div>
+
+<script>
+// Shared app globals, available to every page.
+window.PHARMACY = {
+    csrf: (document.querySelector('meta[name="csrf-token"]') || {}).content || '',
+    currency: {{ currency | tojson }}
+};
+
+// Shared toast helper — defined first so page code can call it on load.
+window.PHARMACY_TOAST = function (message, kind, title) {
+    var wrap = document.getElementById('toastWrap');
+    if (!wrap) return;
+    var icon = kind === 'error' ? 'ph-x-circle' : kind === 'warning' ? 'ph-warning-circle' : 'ph-check-circle';
+
+    var toast = document.createElement('div');
+    toast.className = 'toast' + (kind === 'error' ? ' is-error' : kind === 'warning' ? ' is-warning' : '');
+
+    var iconEl = document.createElement('i');
+    iconEl.className = 'ph ' + icon;
+
+    var body = document.createElement('div');
+    if (title) {
+        var strong = document.createElement('strong');
+        strong.textContent = title;
+        body.appendChild(strong);
+    }
+    body.appendChild(document.createTextNode(message));
+
+    toast.appendChild(iconEl);
+    toast.appendChild(body);
+    wrap.appendChild(toast);
+
+    setTimeout(function () {
+        toast.classList.add('is-leaving');
+        setTimeout(function () { toast.remove(); }, 250);
+    }, 4000);
+};
+
+(function () {
+    // Live clock in the header (replaces the hardcoded date).
+    var days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    function tick() {
+        var now = new Date();
+        var dateEl = document.getElementById('hdrDate');
+        var dayEl = document.getElementById('hdrDay');
+        if (dateEl) dateEl.textContent = months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
+        if (dayEl) dayEl.textContent = days[now.getDay()] + ' · ' + now.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    }
+    tick();
+    setInterval(tick, 1000 * 30);
+
+    // Toasts for redirects that cannot use flash() (fetch-based forms).
+    var params = new URLSearchParams(window.location.search);
+    ['saved', 'info'].forEach(function (key) {
+        var value = params.get(key);
+        if (value) window.PHARMACY_TOAST && window.PHARMACY_TOAST(value, 'success');
+    });
+    if (params.get('error')) window.PHARMACY_TOAST && window.PHARMACY_TOAST(params.get('error'), 'error');
+
+    // Auto-dismiss server-rendered toasts.
+    var wrap = document.getElementById('toastWrap');
+    Array.prototype.slice.call(wrap.querySelectorAll('.toast')).forEach(function (toast, index) {
+        setTimeout(function () {
+            toast.classList.add('is-leaving');
+            setTimeout(function () { toast.remove(); }, 250);
+        }, 4000 + index * 150);
+    });
+
+    // Close the mobile sidebar after navigating.
+    document.querySelectorAll('.sidebar a').forEach(function (link) {
+        link.addEventListener('click', function () { document.body.classList.remove('nav-open'); });
+    });
+})();
+</script>
+</body>
+</html>

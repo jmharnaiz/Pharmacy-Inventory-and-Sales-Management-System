@@ -1,12 +1,23 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.db
-pharmacy.db
-attendance.db
-instance/
-.venv/
+*.py[cod]
+*$py.class
+
+# Virtual environments
 venv/
-.env
-.pytest_cache/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Database
+*.sqlite3
+*.db
+
+# Flask stuff
+instance/
+.webassets-cache
+
+# OS generated files
 .DS_Store
+Thumbs.db

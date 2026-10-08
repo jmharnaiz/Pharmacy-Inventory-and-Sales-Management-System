@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block page_title %}Reports{% endblock %}
+{% block breadcrumbs %}Transactions > Reports{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h3>Reports</h3>
+        <p>Revenue, costs and best sellers — updated live from your records.</p>
+    </div>
+</div>
+
+<div class="dashboard-top-stats cols-4">
+    <div class="stat-card" style="--accent: #0b8243;">
+        <div class="stat-icon-wrapper" style="background-color: #e6f4ea; color: #0b8243;">
+            <i class="ph ph-cash" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Sales Revenue</span>
+            <span class="stat-value" style="color: #0b8243;">{{ currency }}{{ "%.2f"|format(sales) }}</span>
+            <span class="stat-sub">All time</span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #d97706;">
+        <div class="stat-icon-wrapper" style="background-color: #fef3c7; color: #d97706;">
+            <i class="ph ph-coins" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Cost of Goods Sold</span>
+            <span class="stat-value" style="color: #d97706;">{{ currency }}{{ "%.2f"|format(cogs) }}</span>
+            <span class="stat-sub">{{ items_sold }} unit{{ 's' if items_sold != 1 }} sold</span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #9333ea;">
+        <div class="stat-icon-wrapper" style="background-color: #f3e8ff; color: #9333ea;">
+            <i class="ph ph-trend-up" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Gross Profit</span>
+            <span class="stat-value" style="color: #9333ea;">{{ currency }}{{ "%.2f"|format(profit) }}</span>
+            <span class="stat-sub">
+                {% if items_sold %}{{ "%.1f"|format(margin) }}% margin{% else %}Cost data starts with new sales{% endif %}
+            </span>
+        </div>
+    </div>
+
+    <div class="stat-card" style="--accent: #0284c7;">
+        <div class="stat-icon-wrapper" style="background-color: #e0f2fe; color: #0284c7;">
+            <i class="ph ph-truck" style="font-size: 28px;"></i>
+        </div>
+        <div class="stat-details">
+            <span class="stat-label">Purchases Spend</span>
+            <span class="stat-value" style="color: #0284c7;">{{ currency }}{{ "%.2f"|format(purchases) }}</span>
+            <span class="stat-sub">Stock bought from suppliers</span>
+        </div>
+    </div>
+</div>
+
+<div class="dash-grid">
+    <div class="panel">
+        <div class="section-head">
+            <h4><i class="ph ph-chart-line-up" style="color: var(--brand);"></i> Revenue — last 30 days</h4>
+        </div>
+        <div class="chart-box">
+            <canvas id="revenueChart"></canvas>
+        </div>
+        {% if legacy_sales > 0 %}
+        <p class="text-xs text-gray mt-3">
+            <i class="ph ph-info"></i> {{ legacy_sales }} older sale{{ 's' if legacy_sales != 1 }} {{ 'was' if legacy_sales == 1 else 'were' }} backfilled with line items estimated from the invoice
+            total, so their cost of goods uses current cost prices. Stock levels were not changed.
+        </p>
+        {% endif %}
+    </div>
+
+    <div class="panel">
+        <div class="section-head">
+            <h4><i class="ph ph-star" style="color: var(--brand);"></i> Top medicines by revenue</h4>
+        </div>
+        {% if top_medicines %}
+        <table class="data-table">
+            <thead>
+                <tr><th>#</th><th>Medicine</th><th>Units</th><th class="text-right">Revenue</th></tr>
+            </thead>
+            <tbody>
+                {% for med in top_medicines %}
+                <tr>
+                    <td><span class="badge badge-neutral badge-plain">{{ loop.index }}</span></td>
+                    <td>
+                        <strong>{{ med.medicine_name }}</strong>
+                        {% if med.generic_name %}<br><span class="text-xs text-gray">{{ med.generic_name }}</span>{% endif %}
+                    </td>
+                    <td>{{ med.qty }}</td>
+                    <td class="text-right"><strong>{{ currency }}{{ "%.2f"|format(med.revenue) }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state" style="padding: 32px 0;">
+            <div class="empty-icon-wrapper" style="width: 64px; height: 64px;">
+                <i class="ph ph-star" style="font-size: 30px; color: var(--muted-light);"></i>
+            </div>
+            <h4 style="font-size: 15px;">No sales with line items yet</h4>
+            <p class="text-sm">Record sales with the new sale form and your best sellers will appear here.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    if (!window.Chart) return;
+    var CURRENCY = window.PHARMACY ? window.PHARMACY.currency : '₱';
+    Chart.defaults.font.family = "'Inter', sans-serif";
+    Chart.defaults.color = '#6b7280';
+
+    var ctx = document.getElementById('revenueChart');
+    if (!ctx) return;
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: {{ chart_labels | tojson }},
+            datasets: [{
+                label: 'Revenue (' + CURRENCY + ')',
+                data: {{ chart_values | tojson }},
+                borderColor: '#0b8243',
+                backgroundColor: 'rgba(11, 130, 67, 0.08)',
+                fill: true,
+                tension: 0.35,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                pointBackgroundColor: '#0b8243'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#111827',
+                    padding: 10,
+                    cornerRadius: 8,
+                    displayColors: false,
+                    callbacks: {
+                        label: function (c) {
+                            return CURRENCY + Number(c.parsed.y).toLocaleString(undefined, {minimumFractionDigits: 2});
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { grid: { display: false }, border: { display: false },
+                     ticks: { maxTicksLimit: 10 } },
+                y: { beginAtZero: true, grid: { color: '#f3f4f6' }, border: { display: false },
+                     ticks: { callback: function (v) { return CURRENCY + v; } } }
+            }
+        }
+    });
+})();
+</script>
+{% endblock %}

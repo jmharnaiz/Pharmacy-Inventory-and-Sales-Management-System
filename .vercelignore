@@ -1,0 +1,12 @@
+# Local files that must NOT ship to the Vercel function bundle
+pharmacy.db
+database/
+test_*.db
+.secret_key
+.env
+*.pyc
+__pycache__/
+.pytest_cache/
+docs/
+Presentation.pptx
+Study_Kit.docx

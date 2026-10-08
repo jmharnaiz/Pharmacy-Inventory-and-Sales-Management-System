@@ -1,136 +1,127 @@
-"""
-tests/test_medicines.py — Week 5 Task 3: Arrange-Act-Assert (Pharmacy)
-Each controller: 1 happy path, 1 validation failure, 1 edge case
-Run: pytest -v
-"""
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import pytest
+import sqlite3
+import os
+import sys
+
+# Ensure the root directory is in sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from app import app
-from src.models.db import init_db
+from db import init_db, get_db
 
-def login(c, user="admin", pw="admin123"):
-    c.post("/auth/login", json={"username":user,"password":pw})
-
-def test_createMedicine_saves_valid():
+@pytest.fixture
+def client():
+    import db
+    db.DATABASE_PATH = 'test_pharmacy_medicines.db'
+    if os.path.exists(db.DATABASE_PATH):
+        try: os.remove(db.DATABASE_PATH)
+        except: pass
     init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        payload={"medicine_code":"MED-HAPPY-01","medicine_name":"Paracetamol 500mg","generic_name":"Paracetamol","category":"Analgesic","brand":"Biogesic","supplier_id":1,"unit_price":7.50,"quantity":100,"expiration_date":"2027-12-31","status":"Available"}
-        resp=c.post("/medicines", json=payload)
-        assert resp.status_code==201, resp.get_data(as_text=True)
-        data=resp.get_json()
-        assert data["status"]==201
-        assert "data" in data
-        assert data["data"]["medicine_code"]=="MED-HAPPY-01"
-        assert data["data"]["medicine_name"]=="Paracetamol 500mg"
+    
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
+        
+    if os.path.exists(db.DATABASE_PATH):
+        try: os.remove(db.DATABASE_PATH)
+        except: pass
 
-def test_createMedicine_rejects_missing_name():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        payload={"medicine_code":"MED-FAIL-01","category":"Analgesic","brand":"Biogesic","unit_price":5,"quantity":10,"expiration_date":"2027-12-31"}
-        resp=c.post("/medicines", json=payload)
-        assert resp.status_code==422
-        j=resp.get_json()
-        assert j["status"]==422
-        assert j["field"]=="medicine_name"
-        assert "is required" in j["error"]
+def test_get_empty_medicines(client):
+    rv = client.get('/api/medicines/')
+    assert rv.status_code == 200
+    json_data = rv.get_json()
+    assert json_data['status'] == 200
+    assert len(json_data['data']) == 0
 
-def test_createMedicine_rejects_wrong_type_quantity():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        payload={"medicine_code":"MED-TYPE","medicine_name":"Test","category":"Analgesic","brand":"Biogesic","unit_price":5,"quantity":"cake","expiration_date":"2027-12-31"}
-        resp=c.post("/medicines", json=payload)
-        assert resp.status_code==422
-        assert resp.get_json()["field"]=="quantity"
-        assert "must be a number" in resp.get_json()["error"]
+def test_create_medicine_success(client):
+    payload = {
+        "medicine_name": "Paracetamol 500mg",
+        "selling_price": 2.50,
+        "cost_price": 1.20,
+        "current_stock": 100
+    }
+    rv = client.post('/api/medicines/', json=payload)
+    assert rv.status_code == 201
+    json_data = rv.get_json()
+    assert json_data['status'] == 201
+    assert json_data['data']['medicine_name'] == "Paracetamol 500mg"
 
-def test_createMedicine_out_of_range_quantity():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        payload={"medicine_code":"MED-RANGE","medicine_name":"Test","category":"Vitamin","brand":"Test","unit_price":5,"quantity":100000,"expiration_date":"2027-12-31"}
-        resp=c.post("/medicines", json=payload)
-        assert resp.status_code==422
-        assert resp.get_json()["field"]=="quantity"
-        assert "out of range" in resp.get_json()["error"]
+def test_create_medicine_validation_error(client):
+    # Missing medicine_name
+    payload = {
+        "selling_price": 2.50,
+        "cost_price": 1.20,
+        "current_stock": 100
+    }
+    rv = client.post('/api/medicines/', json=payload)
+    assert rv.status_code == 422
+    json_data = rv.get_json()
+    assert json_data['status'] == 422
+    assert json_data['field'] == 'medicine_name'
 
-def test_createMedicine_rejects_invalid_category():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        payload={"medicine_code":"MED-CAT","medicine_name":"Test","category":"InvalidCat","brand":"Biogesic","unit_price":5,"quantity":10,"expiration_date":"2027-12-31"}
-        resp=c.post("/medicines", json=payload)
-        assert resp.status_code==422
-        assert resp.get_json()["field"]=="category"
+def test_create_medicine_boundary_huge_stock(client):
+    # Adversarial test: huge number
+    payload = {
+        "medicine_name": "Too Many Pills",
+        "selling_price": 2.50,
+        "cost_price": 1.20,
+        "current_stock": 9999999999999999999
+    }
+    rv = client.post('/api/medicines/', json=payload)
+    assert rv.status_code == 422
+    json_data = rv.get_json()
+    assert json_data['field'] == 'current_stock'
 
-def test_createMedicine_edge_duplicate_code():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        payload={"medicine_code":"MED-DUP","medicine_name":"A","category":"Analgesic","brand":"Biogesic","unit_price":5,"quantity":10,"expiration_date":"2027-12-31"}
-        r1=c.post("/medicines", json=payload)
-        assert r1.status_code==201
-        r2=c.post("/medicines", json=payload)
-        assert r2.status_code==422
-        assert r2.get_json()["field"]=="medicine_code"
-        assert "already exists" in r2.get_json()["error"]
+def test_create_medicine_xss_input(client):
+    # Adversarial test: script tags
+    payload = {
+        "medicine_name": "<script>alert(1)</script>",
+        "selling_price": 2.50,
+        "cost_price": 1.20,
+        "current_stock": 100
+    }
+    rv = client.post('/api/medicines/', json=payload)
+    assert rv.status_code == 422
+    json_data = rv.get_json()
+    assert json_data['field'] == 'medicine_name'
 
-def test_createMedicine_referential_supplier_not_exist():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        payload={"medicine_code":"MED-REF","medicine_name":"Test","category":"Analgesic","brand":"Biogesic","supplier_id":99999,"unit_price":5,"quantity":10,"expiration_date":"2027-12-31"}
-        resp=c.post("/medicines", json=payload)
-        assert resp.status_code==422
-        assert resp.get_json()["field"]=="supplier_id"
+def test_update_medicine(client):
+    # Create first
+    payload = {
+        "medicine_name": "Aspirin",
+        "selling_price": 3.0,
+        "cost_price": 1.5,
+        "current_stock": 50
+    }
+    client.post('/api/medicines/', json=payload)
+    
+    # Update
+    update_payload = {
+        "medicine_name": "Aspirin Extra",
+        "selling_price": 3.5,
+        "cost_price": 1.5,
+        "current_stock": 40
+    }
+    rv = client.put('/api/medicines/1', json=update_payload)
+    assert rv.status_code == 200
+    json_data = rv.get_json()
+    assert json_data['data']['medicine_name'] == "Aspirin Extra"
+    assert json_data['data']['selling_price'] == 3.5
 
-def test_updateMedicine_edge_nonexistent():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        resp=c.put("/medicines/99999", json={"medicine_code":"MED-X","medicine_name":"New","category":"Vitamin","brand":"Biogesic","unit_price":5,"quantity":10,"expiration_date":"2027-12-31","status":"Available"})
-        assert resp.status_code==422
-        assert resp.get_json()["field"]=="id"
-
-def test_deleteMedicine_forbidden_for_cashier():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as cashier:
-        login(cashier,"cashier","cashier123")
-        resp=cashier.delete("/medicines/1")
-        assert resp.status_code==403
-        j=resp.get_json()
-        assert j["status"]==403
-        assert j["field"]=="authorization"
-
-def test_deleteMedicine_happy_for_admin():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c,"admin","admin123")
-        c.post("/medicines", json={"medicine_code":"MED-DEL","medicine_name":"To Delete","category":"Vitamin","brand":"Brand","unit_price":10,"quantity":5,"expiration_date":"2027-12-31","status":"Available"})
-        # find id
-        meds=c.get("/medicines").get_json()["data"]
-        mid=[m for m in meds if m["medicine_code"]=="MED-DEL"][0]["id"]
-        resp=c.delete(f"/medicines/{mid}")
-        assert resp.status_code==200
-        assert resp.get_json()["data"]["deleted"]==mid
-
-def test_updateStock_validation():
-    init_db()
-    app.config["TESTING"]=True
-    with app.test_client() as c:
-        login(c)
-        resp=c.put("/medicines/1/stock", json={"quantity":"cake"})
-        assert resp.status_code==422
-        assert resp.get_json()["field"]=="quantity"
+def test_delete_medicine(client):
+    # Create first
+    payload = {
+        "medicine_name": "Delete Me",
+        "selling_price": 1.0,
+        "cost_price": 0.5,
+        "current_stock": 10
+    }
+    client.post('/api/medicines/', json=payload)
+    
+    # Delete (with admin header)
+    rv = client.delete('/api/medicines/1', headers={'Authorization': 'Bearer admin-token'})
+    assert rv.status_code == 200
+    
+    # Verify deletion
+    rv_get = client.get('/api/medicines/1')
+    assert rv_get.status_code == 404

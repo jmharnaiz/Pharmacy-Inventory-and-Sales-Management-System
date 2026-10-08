@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block page_title %}Purchases{% endblock %}
+{% block breadcrumbs %}Inventory > Purchases{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h3>Purchases</h3>
+        <p>Receive stock from suppliers — received units are added to inventory immediately.</p>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="section-head">
+        <h4><i class="ph ph-truck" style="color: var(--brand);"></i> Receive stock</h4>
+    </div>
+
+    {% if error %}
+    <div class="error-banner"><i class="ph ph-x-circle"></i> {{ error }}</div>
+    {% endif %}
+
+    <form action="/ui/purchases" method="POST"
+          style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-group" style="margin-bottom: 0; min-width: 190px; flex: 1;">
+            <label>Supplier</label>
+            <select name="supplier_id">
+                <option value="">— None —</option>
+                {% for s in suppliers %}
+                <option value="{{ s.id }}">{{ s.supplier_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0; min-width: 240px; flex: 2;">
+            <label>Medicine <span class="required">*</span></label>
+            <select name="medicine_id" id="purchaseMedicine" required>
+                <option value="">Select medicine...</option>
+                {% for m in medicines %}
+                <option value="{{ m.id }}" data-cost="{{ m.cost_price }}" data-stock="{{ m.current_stock }}">
+                    {{ m.medicine_name }} (stock: {{ m.current_stock }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0; min-width: 110px;">
+            <label>Quantity <span class="required">*</span></label>
+            <input type="number" name="quantity" id="purchaseQty" min="1" step="1" value="1" required>
+        </div>
+        <div class="form-group" style="margin-bottom: 0; min-width: 140px;">
+            <label>Total Cost</label>
+            <input type="text" id="purchaseTotal" value="{{ currency }}0.00" readonly>
+        </div>
+        <button type="submit" class="btn btn-primary" style="padding: 11px 22px;">
+            <i class="ph ph-download-simple"></i> Receive
+        </button>
+    </form>
+    <p class="field-hint" style="margin-top: 12px;">
+        <i class="ph ph-info"></i> Cost is calculated from the medicine's cost price — no manual total to enter.
+    </p>
+</div>
+
+<div class="card table-card" style="margin-top: 20px;">
+    <div class="section-head" style="margin: 14px 0 4px;">
+        <h4><i class="ph ph-clock-counter-clockwise" style="color: var(--brand);"></i> Received deliveries</h4>
+        <span class="text-sm text-gray">{{ items|length }} record{{ 's' if items|length != 1 }}</span>
+    </div>
+
+    {% if items|length == 0 %}
+    <div class="empty-state">
+        <div class="empty-icon-wrapper">
+            <i class="ph ph-truck" style="font-size: 48px; color: var(--muted-light);"></i>
+        </div>
+        <h4>No deliveries received yet</h4>
+        <p>Use the form above the first time stock arrives from a supplier.</p>
+    </div>
+    {% else %}
+    <table class="data-table">
+        <thead>
+            <tr><th>#</th><th>Supplier</th><th>Date</th><th>Items</th><th>Total Amount</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td><strong>#{{ item.id }}</strong></td>
+                <td>{{ item.supplier_name or '—' }}</td>
+                <td class="text-sm text-gray">{{ item.date_time }}</td>
+                <td>{{ item.item_summary or '—' }}</td>
+                <td><strong>{{ currency }}{{ "%.2f"|format(item.total_amount) }}</strong></td>
+                <td><span class="badge badge-success">{{ item.status }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+<script>
+const medSelect = document.getElementById('purchaseMedicine');
+const qtyInput = document.getElementById('purchaseQty');
+const totalInput = document.getElementById('purchaseTotal');
+
+function updateTotal() {
+    const option = medSelect.selectedOptions[0];
+    const cost = option ? parseFloat(option.dataset.cost || 0) : 0;
+    const qty = parseInt(qtyInput.value, 10) || 0;
+    totalInput.value = (window.PHARMACY.currency || '₱') + (cost * qty).toFixed(2);
+}
+
+medSelect.addEventListener('change', updateTotal);
+qtyInput.addEventListener('input', updateTotal);
+updateTotal();
+</script>
+{% endblock %}
